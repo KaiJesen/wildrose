@@ -1,0 +1,44 @@
+# 虚拟环境
+.venv/
+venv/
+env/
+
+# Python 缓存与字节码
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# 打包/构建产物
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# matplotlib 运行时字体缓存
+.mplconfig/
+
+# pyenv 本地（绑定到机器特定的虚拟环境名）
+.python-version
+
+# IDE / 编辑器
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# 操作系统
+.DS_Store
+Thumbs.db
+
+# 测试 / 覆盖率
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+
+# 输出图片（demo 默认保存路径）
+*.png
+*.jpg
+*.pdf
+!notebook/**/*.png

@@ -1,0 +1,5 @@
+# 建议在项目根目录安装可编辑包（含套件 + AkShare + 绑图）：
+#   pip install -e ".[all]"
+#
+# 若只跑抓取逻辑不要 matplotlib：
+#   pip install -e ".[akshare]"

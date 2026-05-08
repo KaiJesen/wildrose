@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "market-data-kit"
+version = "0.1.0"
+description = "Pluggable K-line providers with a unified OHLCV schema"
+requires-python = ">=3.10"
+dependencies = [
+    "pandas>=2.0",
+    "requests>=2.28",
+]
+
+[project.optional-dependencies]
+akshare = ["akshare>=1.14"]
+plot = ["matplotlib>=3.8"]
+all = ["akshare>=1.14", "matplotlib>=3.8"]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["market_data*"]

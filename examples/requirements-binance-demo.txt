@@ -1,0 +1,10 @@
+# Binance 期货 demo 不需要额外依赖（market_data 套件本身就带 requests/pandas）。
+# 只额外依赖 matplotlib 用于绘图。
+#
+# 推荐安装方式（在项目根目录 02_python 下）：
+#   pip install -e ".[plot]"
+#
+# 或仅运行抓取部分（不绘图）：
+#   pip install -e .
+#
+# 网络访问 https://fapi.binance.com 受限时，可加 --proxy http://127.0.0.1:7890
