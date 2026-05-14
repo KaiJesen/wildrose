@@ -87,3 +87,27 @@
 - [ ] 指标特征是否在不同市场状态下存在漂移？
 - [ ] 因果注意力与局部注意力结合能否提升长序列表现？
 - [ ] 回测中的收益改善是否主要来自少数极端区间？
+
+## 已决策的设计选择（C. Embedding层）
+> 相关代码：`transformer_kit/embeddings.py`、`transformer_kit/features.py`
+> 相关笔记：`notebook/bert-style-embedding-implementation.md`
+
+- 问题：单资产场景下 `E_asset` 是禁用还是保留 `n_assets=1`？
+  - 当前结论：禁用（`n_assets=0` 走 `None`），避免冗余参数。多资产再启用。
+  - 验证方法：参数量对比 + 跨资产联合训练时的消融。
+
+- 问题：位置编码默认 learned 还是 sin/cos？
+  - 当前结论：默认 `learned`，与 BERT 一致；`sincos` 仅作消融与长序列外推备选。
+  - 验证方法：固定其它项，对比 `position_type=learned/sincos` 的下游 IC。
+
+- 问题：value 投影用 Linear 还是 MLP？
+  - 当前假设：连续特征 ≤ 10 维时 `linear` 足够；扩展到指标后切换 `mlp`。
+  - 验证方法：`value_proj` 消融，关注训练曲线与验证集 IC。
+
+- 问题：z-score 窗口长度选 60 是否合理？
+  - 当前假设：60 根 K 线（约 2.5 个交易日 @60m）兼顾响应速度与稳定性。
+  - 验证方法：`zscore_window ∈ {30, 60, 120}` 三档消融。
+
+- 问题：`dropout=0.1` 在小样本（<5k 序列）上是否过弱？
+  - 当前假设：先沿用 BERT 默认；若验证集明显过拟合则升到 0.2–0.3。
+  - 验证方法：监控 train/valid loss 间距。
