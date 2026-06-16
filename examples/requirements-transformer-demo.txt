@@ -1,9 +1,6 @@
-# 运行 examples/bert_embedding_demo.py 所需的依赖
-# 安装：pip install -r examples/requirements-transformer-demo.txt
-# 或:  pip install -e ".[all,transformer]"
+# 运行形态编码三阶段训练
+# pip install -e ".[transformer]"
 
 torch>=2.0
 numpy>=1.24
 pandas>=2.0
-akshare>=1.14
-requests>=2.28

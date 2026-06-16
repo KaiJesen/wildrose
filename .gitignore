@@ -37,6 +37,9 @@ Thumbs.db
 htmlcov/
 .tox/
 
+# 训练用 K 线 CSV 缓存
+data/cache/
+
 # 输出图片（demo 默认保存路径）
 *.png
 *.jpg

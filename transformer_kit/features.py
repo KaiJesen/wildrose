@@ -1,4 +1,4 @@
-"""K 线序列的因果特征工程（feed 给 KlineBertEmbedding）。
+"""K 线序列的因果特征工程。
 
 所有变换严格因果：位置 i 只使用 <= i 的信息。
 - ``add_log_returns``    : 计算对数收益
