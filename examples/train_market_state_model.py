@@ -32,12 +32,12 @@ from _train_common import (
     prepare_bar_series_from_args,
 )
 from transformer_kit.causal_transformer import CausalTransformerConfig
-from transformer_kit.labels import MarketStateThresholds, estimate_market_state_thresholds
+from transformer_kit.labels import MarketStateThresholds, build_market_state_targets, estimate_market_state_thresholds
 from transformer_kit.pattern_encoder import pattern_config_from_args
 from transformer_kit.pattern_model import KlinePatternPredictor, PatternPredictorConfig
 from transformer_kit.schedulers import build_adamw_with_warmup_cosine_restarts
 from transformer_kit.segment_dataset import PatternSequenceDataset, SequenceSampleIndex, build_sequence_sample_indices
-from transformer_kit.train_utils import load_auto_encoder, save_checkpoint
+from transformer_kit.train_utils import load_auto_encoder, load_checkpoint, save_checkpoint
 from transformer_kit.training import evaluate_market_state, train_market_state_epoch
 
 
@@ -52,17 +52,39 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--pred-horizon", type=int, default=5)
     p.add_argument("--stride", type=int, default=8)
     p.add_argument("--trunk-layers", type=int, default=2)
-    p.add_argument("--init-checkpoint", default="checkpoints/0041_rebalanced_real_btc/stage2_vqvae.pt")
+    p.add_argument("--init-checkpoint", default="checkpoints/0050_market_state_embed/stage2_vqvae.pt")
+    p.add_argument(
+        "--init-market-checkpoint",
+        default="",
+        help="加载完整 market-state 模型权重（用于从上一轮 best 微调）",
+    )
     p.add_argument("--encoder-lr-scale", type=float, default=0.05)
-    p.add_argument("--report-dir", default="reports/0050_market_state_formal")
+    p.add_argument("--report-dir", default="reports/0058_market_state_usable")
     p.add_argument("--dpi", type=int, default=140)
-    p.add_argument("--return-weight", type=float, default=0.4)
-    p.add_argument("--direction-weight", type=float, default=0.4)
-    p.add_argument("--volatility-weight", type=float, default=0.15)
-    p.add_argument("--risk-weight", type=float, default=0.05)
-    p.add_argument("--direction-threshold-quantile", type=float, default=0.35)
-    p.add_argument("--risk-threshold-quantile", type=float, default=0.8)
-    p.set_defaults(epochs=36, batch_size=64, d_model=128, n_heads=4, encoder_layers=2)
+    p.add_argument("--return-weight", type=float, default=0.30)
+    p.add_argument("--direction-weight", type=float, default=0.50)
+    p.add_argument("--volatility-weight", type=float, default=0.10)
+    p.add_argument("--risk-weight", type=float, default=0.10)
+    p.add_argument("--direction-threshold-quantile", type=float, default=0.25)
+    p.add_argument("--risk-threshold-quantile", type=float, default=0.70)
+    p.add_argument("--use-class-weights", action="store_true", help="direction/risk CE 使用 train 类别权重（阶段 B）")
+    p.add_argument("--risk-focal-loss", action="store_true", help="risk 头使用 focal loss（0053 阶段 C）")
+    p.add_argument("--focal-gamma", type=float, default=2.0)
+    p.add_argument("--cum-direction-weight", type=float, default=0.06, help="累计方向辅助损失权重")
+    p.add_argument("--min-valid-risk-f1", type=float, default=0.45, help="选模时 valid risk_f1 下限，防止 risk 头坍缩")
+    p.add_argument("--early-stop-patience", type=int, default=15)
+    p.set_defaults(
+        epochs=60,
+        batch_size=64,
+        d_model=128,
+        n_heads=4,
+        encoder_layers=2,
+        checkpoint_dir="checkpoints/0058_market_state_usable",
+        report_dir="reports/0058_market_state_usable",
+        use_class_weights=True,
+        cum_direction_weight=0.06,
+        min_valid_risk_f1=0.45,
+    )
     return p.parse_args()
 
 
@@ -101,13 +123,89 @@ def make_loader(bundle, samples, args, thresholds: MarketStateThresholds, *, shu
 
 
 def composite_score(metrics: dict[str, float]) -> float:
-    """与软件设计师文档一致的 valid 选模分数。"""
+    """架构师-003 可用阶段选模分数 score_v1。"""
     return (
-        metrics["cum_direction_acc"]
-        + 0.5 * metrics["return_ic"]
+        0.45 * metrics["cum_direction_acc"]
         + 0.25 * metrics["direction_macro_f1"]
-        - 0.1 * metrics["volatility_mae"]
+        + 0.15 * max(metrics["return_ic"], -0.05)
+        + 0.10 * metrics["risk_f1"]
+        - 0.05 * metrics["volatility_mae"]
     )
+
+
+USABLE_GATES = {
+    "cum_direction_acc>=56%": ("cum_direction_acc", lambda v: v >= 0.56),
+    "direction_macro_f1>=0.30": ("direction_macro_f1", lambda v: v >= 0.30),
+    "risk_f1>=0.48": ("risk_f1", lambda v: v >= 0.48),
+    "return_ic>0": ("return_ic", lambda v: v > 0),
+    "volatility_mae<=0.10": ("volatility_mae", lambda v: v <= 0.10),
+}
+
+
+def float_metrics(metrics: dict) -> dict[str, float]:
+    return {k: float(v) for k, v in metrics.items() if isinstance(v, (int, float)) and not k.startswith("_")}
+
+
+def compute_train_class_weights(loader: DataLoader, device: torch.device) -> tuple[torch.Tensor, torch.Tensor]:
+    dir_counts = torch.zeros(3, dtype=torch.float32)
+    risk_counts = torch.zeros(2, dtype=torch.float32)
+    for batch in loader:
+        dir_counts += torch.bincount(batch["target_direction"].reshape(-1), minlength=3).float()
+        risk_counts += torch.bincount(batch["target_risk"].reshape(-1).long(), minlength=2).float()
+    dir_w = dir_counts.sum() / (3.0 * dir_counts.clamp(min=1.0))
+    risk_w = risk_counts.sum() / (2.0 * risk_counts.clamp(min=1.0))
+    return dir_w.to(device), risk_w.to(device)
+
+
+def label_distribution(raw_log_ret: np.ndarray, samples: list[SequenceSampleIndex], thr: MarketStateThresholds) -> dict:
+    dir_counts = np.zeros(3, dtype=np.float64)
+    risk_pos = 0
+    n = 0
+    for s in samples:
+        future = raw_log_ret[s.context_end : s.future_end]
+        tgt = build_market_state_targets(
+            future,
+            direction_threshold=thr.direction_threshold,
+            risk_vol_threshold=thr.risk_vol_threshold,
+        )
+        for c in tgt.direction_label.numpy():
+            dir_counts[int(c)] += 1
+        risk_pos += int(tgt.risk_label.numpy().max() > 0.5)
+        n += 1
+    return {
+        "direction": {f"c{i}": float(dir_counts[i] / max(1.0, dir_counts.sum())) for i in range(3)},
+        "risk_positive_rate": float(risk_pos / max(1, n)),
+        "num_samples": n,
+    }
+
+
+def acceptance_decision(
+    test: dict[str, float],
+    diagnostics: dict | None = None,
+    *,
+    vol_cap: float = 0.10,
+) -> tuple[str, list[str], str]:
+    checks = {
+        k: fn(test[key]) for k, (key, fn) in USABLE_GATES.items() if k != "volatility_mae<=0.10"
+    }
+    checks["volatility_mae<=cap"] = test["volatility_mae"] <= vol_cap
+    passed = sum(checks.values())
+    reasons = [k for k, ok in checks.items() if not ok]
+    blocking = reasons[0] if reasons else ""
+    if diagnostics:
+        risk_pred = diagnostics.get("risk_positive_rate_pred")
+        if risk_pred is not None and (risk_pred < 0.05 or risk_pred > 0.95):
+            reasons.append("risk_prediction_collapsed")
+            blocking = blocking or "risk_prediction_collapsed"
+    if test["return_ic"] <= 0 or test["direction_macro_f1"] < 0.27:
+        decision = "reject"
+    elif "risk_prediction_collapsed" in reasons:
+        decision = "reject"
+    elif passed >= 4:
+        decision = "accept"
+    else:
+        decision = "conditional"
+    return decision, reasons, blocking
 
 
 def plot_training_curves(history: list[dict[str, float]], out_path: Path, dpi: int) -> None:
@@ -143,7 +241,14 @@ def plot_training_curves(history: list[dict[str, float]], out_path: Path, dpi: i
     plt.close(fig)
 
 
-def plot_test_metrics(test_metrics: dict[str, float], smoke_metrics: dict[str, float] | None, out_path: Path, dpi: int) -> None:
+def plot_test_metrics(
+    test_metrics: dict[str, float],
+    baseline_metrics: dict[str, float] | None,
+    out_path: Path,
+    dpi: int,
+    *,
+    baseline_label: str = "0050 formal",
+) -> None:
     keys = [
         ("cum_direction_acc", "Cum Dir Acc"),
         ("direction_acc", "Step Dir Acc"),
@@ -153,16 +258,16 @@ def plot_test_metrics(test_metrics: dict[str, float], smoke_metrics: dict[str, f
         ("risk_f1", "Risk F1"),
     ]
     x = np.arange(len(keys))
-    width = 0.35 if smoke_metrics else 0.55
+    width = 0.35 if baseline_metrics else 0.55
     vals = [test_metrics[k] for k, _ in keys]
     fig, ax = plt.subplots(figsize=(11, 5))
-    ax.bar(x - (width / 2 if smoke_metrics else 0), vals, width=width, label="formal test")
-    if smoke_metrics:
-        smoke_vals = [smoke_metrics.get(k, 0.0) for k, _ in keys]
-        ax.bar(x + width / 2, smoke_vals, width=width, label="smoke test (0049)")
+    ax.bar(x - (width / 2 if baseline_metrics else 0), vals, width=width, label="current test")
+    if baseline_metrics:
+        base_vals = [baseline_metrics.get(k, 0.0) for k, _ in keys]
+        ax.bar(x + width / 2, base_vals, width=width, label=baseline_label)
     ax.set_xticks(x)
     ax.set_xticklabels([label for _, label in keys], rotation=20, ha="right")
-    ax.set_title("Test Metrics: Formal vs Smoke Baseline")
+    ax.set_title("Test Metrics vs 0050 Baseline")
     ax.grid(True, axis="y", alpha=0.25)
     ax.legend()
     fig.tight_layout()
@@ -173,25 +278,44 @@ def plot_test_metrics(test_metrics: dict[str, float], smoke_metrics: dict[str, f
 def write_report_md(
     path: Path,
     *,
+    run_id: str,
     args: argparse.Namespace,
     thresholds: MarketStateThresholds,
+    class_dist: dict,
     test_metrics: dict[str, float],
+    test_diagnostics: dict,
     best_valid: dict[str, float],
-    smoke_metrics: dict[str, float] | None,
+    baseline_metrics: dict[str, float] | None,
+    decision: str,
+    reject_reasons: list[str],
+    blocking_metric: str = "",
+    target_stage: str = "usable",
 ) -> None:
     lines = [
-        "# 0050 多任务市场状态模型正式实验报告",
+        f"# {run_id} 多任务市场状态模型训练报告",
         "",
         "## 实验依据",
         "",
-        "依据 `document/软件设计师_001_多任务市场状态改造实施与训练建议.md` 第一轮正式配置执行。",
+        "- `document/架构师-003-理想模型指标目标指导.md`",
+        "- `document/架构师-002-模型指标训练指导.md`",
+        "- `document/软件设计师_003_市场状态模型最终训练建议[训练建议].md`",
+        "",
+        f"## 目标阶段: **{target_stage}**",
+        "",
+        "## 本轮训练配置（架构师-003 阶段 1→可用）",
+        "",
+        f"- `direction_threshold_quantile={args.direction_threshold_quantile}`",
+        f"- `risk_threshold_quantile={args.risk_threshold_quantile}`",
+        f"- return/direction/volatility/risk = {args.return_weight}/{args.direction_weight}/"
+        f"{args.volatility_weight}/{args.risk_weight}",
+        f"- cum_direction_weight={args.cum_direction_weight}",
+        f"- min_valid_risk_f1={args.min_valid_risk_f1}",
+        f"- class_weights={args.use_class_weights}, risk_focal_loss={args.risk_focal_loss}",
+        f"- score_v1 选模, epochs={args.epochs}, early_stop_patience={args.early_stop_patience}",
         "",
         "## 数据与模型",
         "",
         f"- 数据源: `{args.source}` / `{args.symbol}` / `{args.interval}` / `{args.days}` 天",
-        f"- 上下文: `{args.context_bars}` bar，预测 horizon: `{args.pred_horizon}`",
-        f"- `d_model={args.d_model}`, `n_heads={args.n_heads}`, `trunk_layers={args.trunk_layers}`",
-        f"- 多任务头: return / direction(3-class) / volatility / risk(2-class)",
         f"- 初始化 encoder: `{args.init_checkpoint}`",
         "",
         "## 标签阈值（仅 train 拟合）",
@@ -199,15 +323,15 @@ def write_report_md(
         f"- `direction_threshold={thresholds.direction_threshold:.8f}`",
         f"- `risk_vol_threshold={thresholds.risk_vol_threshold:.8f}`",
         "",
-        "## 损失权重",
+        "## Train 类别分布",
         "",
-        f"- return={args.return_weight}, direction={args.direction_weight}, "
-        f"volatility={args.volatility_weight}, risk={args.risk_weight}",
+        f"- direction: `{class_dist['train']['direction']}`",
+        f"- risk_positive_rate: `{class_dist['train']['risk_positive_rate']:.3f}`",
         "",
         "## 测试集指标",
         "",
-        f"| 指标 | 正式实验 |" + (" Smoke(0049) |" if smoke_metrics else ""),
-        f"|------|----------|" + ("-----------|" if smoke_metrics else ""),
+        f"| 指标 | {run_id} |" + (f" 0050 |" if baseline_metrics else ""),
+        f"|------|------|" + ("------|" if baseline_metrics else ""),
     ]
     metric_rows = [
         ("cum_direction_acc", "{:.1%}"),
@@ -221,46 +345,48 @@ def write_report_md(
     ]
     for key, fmt in metric_rows:
         row = f"| {key} | {fmt.format(test_metrics[key])} |"
-        if smoke_metrics and key in smoke_metrics:
-            row += f" {fmt.format(smoke_metrics[key])} |"
+        if baseline_metrics and key in baseline_metrics:
+            row += f" {fmt.format(baseline_metrics[key])} |"
         lines.append(row)
     lines.extend(
         [
             "",
-            "## 最佳验证集（选模分数）",
+            "## 最佳验证集",
             "",
             f"- composite_score={composite_score(best_valid):.4f}",
             f"- cum_direction_acc={best_valid['cum_direction_acc']:.1%}",
-            f"- return_ic={best_valid['return_ic']:.3f}",
             f"- direction_macro_f1={best_valid['direction_macro_f1']:.3f}",
+            f"- return_ic={best_valid['return_ic']:.3f}",
+            f"- risk_f1={best_valid['risk_f1']:.3f}",
             f"- volatility_mae={best_valid['volatility_mae']:.6f}",
             "",
-            "## 图表",
+            "## 测试诊断",
             "",
-            "- `01_training_curves.png`：训练/验证损失与多任务指标曲线",
-            "- `02_test_metrics.png`：测试集指标（与 smoke 对比）",
+            f"- direction_pred: `{ {k: round(v,3) for k,v in test_diagnostics.items() if k.startswith('direction_pred_')} }`",
+            f"- risk_positive_rate_true/pred: "
+            f"{test_diagnostics.get('risk_positive_rate_true', 0):.3f} / "
+            f"{test_diagnostics.get('risk_positive_rate_pred', 0):.3f}",
             "",
-            "## 结论与下一步",
+            "## 验收结论（可用模型 5 项至少 4 项）",
             "",
+            f"- target_stage: **{target_stage}**",
+            f"- decision: **{decision}**",
+            f"- gates_passed: {5 - len(reject_reasons)}/5",
         ]
     )
-    if test_metrics["cum_direction_acc"] >= (smoke_metrics or {}).get("cum_direction_acc", 0.0):
-        lines.append("- 累计方向准确率不低于 smoke 基线。")
-    else:
-        lines.append("- 累计方向准确率低于 smoke，需加强 encoder 预训练或调整损失权重。")
-    if test_metrics["return_ic"] > 0:
-        lines.append("- 收益 IC 在测试集为正，回归头具备一定预测力。")
-    else:
-        lines.append("- 收益 IC 仍为负，建议加大 return 权重或启用 horizon-aware 市场状态头。")
-    lines.append("- 后续可做 CPC 主干 vs VQ 主干同头对比（文档 5.3）。")
+    if blocking_metric:
+        lines.append(f"- blocking_metric: `{blocking_metric}`")
+    if reject_reasons:
+        lines.append(f"- 未达标项: {', '.join(reject_reasons)}")
+    lines.extend(["", "## 图表", "", "- `01_training_curves.png`", "- `02_test_metrics.png`", ""])
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
-def load_smoke_metrics() -> dict[str, float] | None:
-    smoke_path = Path("reports/0049_market_state_smoke/metrics.json")
-    if not smoke_path.is_file():
+def load_baseline_metrics(path: str) -> dict[str, float] | None:
+    p = Path(path)
+    if not p.is_file():
         return None
-    data = json.loads(smoke_path.read_text(encoding="utf-8"))
+    data = json.loads(p.read_text(encoding="utf-8"))
     return data.get("test_metrics")
 
 
@@ -275,6 +401,7 @@ def main() -> int:
     ckpt_dir.mkdir(parents=True, exist_ok=True)
     report_dir = Path(args.report_dir)
     report_dir.mkdir(parents=True, exist_ok=True)
+    run_id = report_dir.name
 
     bundle = prepare_bar_series_from_args(fetch_ohlcv_df(args), args)
     train_samples, valid_samples, test_samples = build_split_samples(bundle, args)
@@ -304,7 +431,12 @@ def main() -> int:
     ).to(device)
 
     init_path = Path(args.init_checkpoint)
-    if init_path.is_file():
+    market_init = Path(args.init_market_checkpoint) if args.init_market_checkpoint else None
+    if market_init and market_init.is_file():
+        ck = load_checkpoint(market_init, map_location=device)
+        model.load_state_dict(ck["model"], strict=False)
+        print(f"  loaded full market-state model from {market_init}")
+    elif init_path.is_file():
         load_auto_encoder(model.auto_encoder, init_path)
         print(f"  loaded auto encoder from {init_path}")
 
@@ -321,58 +453,69 @@ def main() -> int:
         eta_min=args.eta_min,
     )
 
-    best = float("-inf")
-    best_valid: dict[str, float] = {}
-    history: list[dict[str, float]] = []
-    for ep in range(1, args.epochs + 1):
-        tr = train_market_state_epoch(
-            model,
-            train_loader,
-            opt,
-            sched,
-            device,
-            grad_clip=args.grad_clip,
-            return_weight=args.return_weight,
-            direction_weight=args.direction_weight,
-            volatility_weight=args.volatility_weight,
-            risk_weight=args.risk_weight,
-        )
-        va = evaluate_market_state(
-            model,
-            valid_loader,
-            device,
-            return_weight=args.return_weight,
-            direction_weight=args.direction_weight,
-            volatility_weight=args.volatility_weight,
-            risk_weight=args.risk_weight,
-        )
-        row = {"epoch": ep, "train_loss": tr.loss, **va}
-        history.append(row)
-        score = composite_score(va)
-        mark = ""
-        if score > best:
-            best = score
-            best_valid = dict(va)
-            save_checkpoint(ckpt_dir / "market_state_best.pt", {"model": model.state_dict(), "args": vars(args)})
-            mark = " *saved"
-        if ep == 1 or ep % max(1, args.epochs // 6) == 0:
-            print(
-                f"  ep {ep:03d} tr={tr.loss:.4f} va={va['loss']:.4f} "
-                f"dir={va['direction_acc']:.1%} cum={va['cum_direction_acc']:.1%} "
-                f"ic={va['return_ic']:.3f} vol_mae={va['volatility_mae']:.4f}{mark}"
-            )
+    class_dist = {
+        "train": label_distribution(bundle.raw_log_ret, train_samples, thr),
+        "valid": label_distribution(bundle.raw_log_ret, valid_samples, thr),
+        "test": label_distribution(bundle.raw_log_ret, test_samples, thr),
+    }
+    print(f"  thresholds: dir={thr.direction_threshold:.6f} risk_vol={thr.risk_vol_threshold:.6f}")
+    print(f"  train direction dist: {class_dist['train']['direction']}")
 
-    ck = torch.load(ckpt_dir / "market_state_best.pt", map_location=device, weights_only=False)
-    model.load_state_dict(ck["model"])
-    te = evaluate_market_state(
-        model,
-        test_loader,
-        device,
+    dir_class_w = risk_class_w = None
+    if args.use_class_weights:
+        dir_class_w, risk_class_w = compute_train_class_weights(train_loader, device)
+        print(f"  class weights: dir={dir_class_w.cpu().tolist()} risk={risk_class_w.cpu().tolist()}")
+
+    loss_kw = dict(
         return_weight=args.return_weight,
         direction_weight=args.direction_weight,
         volatility_weight=args.volatility_weight,
         risk_weight=args.risk_weight,
+        cum_direction_weight=args.cum_direction_weight,
+        direction_class_weight=dir_class_w,
+        risk_class_weight=risk_class_w,
+        risk_focal_loss=args.risk_focal_loss,
+        focal_gamma=args.focal_gamma,
     )
+
+    best = float("-inf")
+    best_valid: dict[str, float] = {}
+    history: list[dict[str, float]] = []
+    stale = 0
+    for ep in range(1, args.epochs + 1):
+        tr = train_market_state_epoch(model, train_loader, opt, sched, device, grad_clip=args.grad_clip, **loss_kw)
+        va = evaluate_market_state(model, valid_loader, device, **loss_kw)
+        row = {"epoch": ep, "train_loss": tr.loss, **float_metrics(va)}
+        history.append(row)
+        score = composite_score(va)
+        mark = ""
+        eligible = va["risk_f1"] >= args.min_valid_risk_f1
+        if eligible and score > best:
+            best = score
+            best_valid = float_metrics(va)
+            stale = 0
+            save_checkpoint(ckpt_dir / "market_state_best.pt", {"model": model.state_dict(), "args": vars(args)})
+            mark = " *saved"
+        else:
+            stale += 1
+            if not eligible:
+                mark = " (skip: risk_f1)"
+        if ep == 1 or ep % max(1, args.epochs // 6) == 0:
+            print(
+                f"  ep {ep:03d} tr={tr.loss:.4f} va={va['loss']:.4f} "
+                f"dir={va['direction_acc']:.1%} macro_f1={va['direction_macro_f1']:.3f} "
+                f"cum={va['cum_direction_acc']:.1%} ic={va['return_ic']:.3f} "
+                f"risk_f1={va['risk_f1']:.3f} score={score:.4f}{mark}"
+            )
+        if args.early_stop_patience > 0 and stale >= args.early_stop_patience:
+            print(f"  early stop at epoch {ep} (patience={args.early_stop_patience})")
+            break
+
+    ck = torch.load(ckpt_dir / "market_state_best.pt", map_location=device, weights_only=False)
+    model.load_state_dict(ck["model"])
+    te_raw = evaluate_market_state(model, test_loader, device, **loss_kw, with_diagnostics=True)
+    te = float_metrics(te_raw)
+    diagnostics = {k: v for k, v in te_raw.items() if k.startswith("_") or k.startswith("direction_") or k.startswith("risk_") or k.startswith("return_ic_h")}
     print(
         f"[TEST] loss={te['loss']:.4f} dir={te['direction_acc']:.1%} "
         f"macro_f1={te['direction_macro_f1']:.3f} cum={te['cum_direction_acc']:.1%} "
@@ -380,29 +523,49 @@ def main() -> int:
         f"vol_mae={te['volatility_mae']:.5f} risk_f1={te['risk_f1']:.3f}"
     )
 
-    smoke_metrics = load_smoke_metrics()
+    baseline = load_baseline_metrics("reports/0052_market_state_class_weights/metrics.json")
+    if baseline is None:
+        baseline = load_baseline_metrics("reports/0050_market_state_formal/metrics.json")
+    decision, reject_reasons, blocking_metric = acceptance_decision(te, diagnostics, vol_cap=0.10)
     plot_training_curves(history, report_dir / "01_training_curves.png", args.dpi)
-    plot_test_metrics(te, smoke_metrics, report_dir / "02_test_metrics.png", args.dpi)
+    plot_test_metrics(te, baseline, report_dir / "02_test_metrics.png", args.dpi, baseline_label="0052 class_weights")
     write_report_md(
         report_dir / "REPORT.md",
+        run_id=run_id,
         args=args,
         thresholds=thr,
+        class_dist=class_dist,
         test_metrics=te,
+        test_diagnostics=diagnostics,
         best_valid=best_valid,
-        smoke_metrics=smoke_metrics,
+        baseline_metrics=baseline,
+        decision=decision,
+        reject_reasons=reject_reasons,
+        blocking_metric=blocking_metric,
+        target_stage="usable",
     )
 
     payload = {
+        "target_stage": "usable",
+        "run_id": run_id,
         "args": vars(args),
         "thresholds": {
+            "direction_threshold_quantile": args.direction_threshold_quantile,
+            "risk_threshold_quantile": args.risk_threshold_quantile,
             "direction_threshold": thr.direction_threshold,
             "risk_vol_threshold": thr.risk_vol_threshold,
         },
+        "class_distribution": class_dist,
         "history": history,
         "best_valid_metrics": best_valid,
         "best_composite_score": composite_score(best_valid) if best_valid else None,
         "test_metrics": te,
-        "smoke_baseline": smoke_metrics,
+        "test_diagnostics": diagnostics,
+        "baseline_0052": baseline,
+        "decision": decision,
+        "blocking_metric": blocking_metric,
+        "reject_reasons": reject_reasons,
+        "gates_passed": 5 - len(reject_reasons),
     }
     (report_dir / "metrics.json").write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
     (report_dir / "metrics.txt").write_text(
@@ -419,7 +582,8 @@ def main() -> int:
                 f"return_mae={te['return_mae']:.6f}",
                 f"volatility_mae={te['volatility_mae']:.6f}",
                 f"risk_f1={te['risk_f1']:.3f}",
-                f"loss={te['loss']:.6f}",
+                f"decision={decision}",
+                f"composite_score={composite_score(best_valid):.4f}",
             ]
         )
         + "\n",

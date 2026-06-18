@@ -40,6 +40,30 @@ def _macro_f1_score(pred: torch.Tensor, target: torch.Tensor, num_classes: int) 
     return float(sum(f1s) / max(1, len(f1s)))
 
 
+def _class_distribution(counts: torch.Tensor) -> dict[str, float]:
+    total = float(counts.sum().clamp(min=1.0).item())
+    return {f"c{i}": float(counts[i].item() / total) for i in range(counts.numel())}
+
+
+def _confusion_matrix(pred: torch.Tensor, target: torch.Tensor, num_classes: int) -> list[list[int]]:
+    cm = torch.zeros(num_classes, num_classes, dtype=torch.long)
+    for p, t in zip(pred.reshape(-1), target.reshape(-1)):
+        cm[int(t), int(p)] += 1
+    return cm.tolist()
+
+
+def _focal_cross_entropy(
+    logits: torch.Tensor,
+    targets: torch.Tensor,
+    *,
+    weight: torch.Tensor | None = None,
+    gamma: float = 2.0,
+) -> torch.Tensor:
+    ce = F.cross_entropy(logits, targets, weight=weight, reduction="none")
+    pt = torch.exp(-ce)
+    return (((1.0 - pt) ** gamma) * ce).mean()
+
+
 def market_state_loss(
     output: MarketStateOutput,
     target: MarketStateTargets,
@@ -48,30 +72,49 @@ def market_state_loss(
     direction_weight: float = 0.4,
     volatility_weight: float = 0.15,
     risk_weight: float = 0.05,
+    cum_direction_weight: float = 0.0,
+    direction_class_weight: torch.Tensor | None = None,
+    risk_class_weight: torch.Tensor | None = None,
+    risk_focal_loss: bool = False,
+    focal_gamma: float = 2.0,
 ) -> tuple[torch.Tensor, dict[str, float]]:
     ret_loss = F.huber_loss(output.return_pred, target.future_log_ret, delta=0.5)
     dir_loss = F.cross_entropy(
         output.direction_logits.reshape(-1, output.direction_logits.size(-1)),
         target.direction_label.reshape(-1),
+        weight=direction_class_weight,
     )
     vol_target = torch.log(target.volatility.clamp(min=1e-6))
     vol_pred = torch.log(output.volatility_pred.abs().clamp(min=1e-6))
     vol_loss = F.huber_loss(vol_pred, vol_target, delta=0.5)
-    risk_loss = F.cross_entropy(
-        output.risk_logits.reshape(-1, output.risk_logits.size(-1)),
-        target.risk_label.long().reshape(-1),
+    risk_logits = output.risk_logits.reshape(-1, output.risk_logits.size(-1))
+    risk_targets = target.risk_label.long().reshape(-1)
+    if risk_focal_loss:
+        risk_loss = _focal_cross_entropy(
+            risk_logits,
+            risk_targets,
+            weight=risk_class_weight,
+            gamma=focal_gamma,
+        )
+    else:
+        risk_loss = F.cross_entropy(risk_logits, risk_targets, weight=risk_class_weight)
+    cum_dir_loss = F.binary_cross_entropy_with_logits(
+        output.return_pred.sum(dim=1),
+        (target.future_log_ret.sum(dim=1) > 0).float(),
     )
     total = (
         return_weight * ret_loss
         + direction_weight * dir_loss
         + volatility_weight * vol_loss
         + risk_weight * risk_loss
+        + cum_direction_weight * cum_dir_loss
     )
     return total, {
         "return_loss": float(ret_loss.detach()),
         "direction_loss": float(dir_loss.detach()),
         "volatility_loss": float(vol_loss.detach()),
         "risk_loss": float(risk_loss.detach()),
+        "cum_direction_loss": float(cum_dir_loss.detach()),
     }
 
 
@@ -775,6 +818,12 @@ def evaluate_market_state(
     direction_weight: float = 0.4,
     volatility_weight: float = 0.15,
     risk_weight: float = 0.05,
+    direction_class_weight: torch.Tensor | None = None,
+    risk_class_weight: torch.Tensor | None = None,
+    cum_direction_weight: float = 0.0,
+    risk_focal_loss: bool = False,
+    focal_gamma: float = 2.0,
+    with_diagnostics: bool = False,
 ) -> dict[str, float]:
     model.eval()
     total = 0.0
@@ -807,6 +856,11 @@ def evaluate_market_state(
             direction_weight=direction_weight,
             volatility_weight=volatility_weight,
             risk_weight=risk_weight,
+            cum_direction_weight=cum_direction_weight,
+            direction_class_weight=direction_class_weight,
+            risk_class_weight=risk_class_weight,
+            risk_focal_loss=risk_focal_loss,
+            focal_gamma=focal_gamma,
         )
         bs = ctx.size(0)
         total += float(loss.item()) * bs
@@ -830,7 +884,7 @@ def evaluate_market_state(
     pr, yr = ret_p.reshape(-1).numpy(), ret_y.reshape(-1).numpy()
     return_ic = float(np.corrcoef(pr, yr)[0, 1]) if pr.std() > 1e-8 and yr.std() > 1e-8 else 0.0
     cum_direction_acc = float(((ret_p.sum(dim=1) > 0) == (ret_y.sum(dim=1) > 0)).float().mean().item())
-    return {
+    out_metrics: dict[str, float] = {
         "loss": total / max(1, n),
         "direction_acc": float((dir_p == dir_y).float().mean().item()),
         "direction_macro_f1": _macro_f1_score(dir_p.reshape(-1), dir_y.reshape(-1), num_classes=3),
@@ -839,7 +893,30 @@ def evaluate_market_state(
         "return_mae": float(torch.mean(torch.abs(ret_p - ret_y)).item()),
         "volatility_mae": float(torch.mean(torch.abs(vol_p - vol_y)).item()),
         "risk_f1": _macro_f1_score(risk_p.reshape(-1), risk_y.reshape(-1), num_classes=2),
+        "pred_return_std": float(ret_p.reshape(-1).std().item()),
+        "pred_volatility_std": float(vol_p.reshape(-1).std().item()),
     }
+    if with_diagnostics:
+        dir_true_counts = torch.bincount(dir_y.reshape(-1), minlength=3).float()
+        dir_pred_counts = torch.bincount(dir_p.reshape(-1), minlength=3).float()
+        risk_true = risk_y.reshape(-1).float()
+        risk_pred = risk_p.reshape(-1).float()
+        out_metrics["risk_positive_rate_true"] = float(risk_true.mean().item())
+        out_metrics["risk_positive_rate_pred"] = float(risk_pred.mean().item())
+        for i in range(3):
+            out_metrics[f"direction_true_c{i}"] = float(dir_true_counts[i] / dir_true_counts.sum().clamp(min=1))
+            out_metrics[f"direction_pred_c{i}"] = float(dir_pred_counts[i] / dir_pred_counts.sum().clamp(min=1))
+        for h in range(ret_p.size(1)):
+            ph = ret_p[:, h].numpy()
+            yh = ret_y[:, h].numpy()
+            out_metrics[f"direction_acc_h{h + 1}"] = float((dir_p[:, h] == dir_y[:, h]).float().mean().item())
+            if ph.std() > 1e-8 and yh.std() > 1e-8:
+                out_metrics[f"return_ic_h{h + 1}"] = float(np.corrcoef(ph, yh)[0, 1])
+            else:
+                out_metrics[f"return_ic_h{h + 1}"] = 0.0
+        out_metrics["_direction_confusion_matrix"] = _confusion_matrix(dir_p, dir_y, 3)
+        out_metrics["_risk_confusion_matrix"] = _confusion_matrix(risk_p, risk_y, 2)
+    return out_metrics
 
 
 def train_market_state_epoch(
@@ -854,6 +931,11 @@ def train_market_state_epoch(
     direction_weight: float = 0.4,
     volatility_weight: float = 0.15,
     risk_weight: float = 0.05,
+    direction_class_weight: torch.Tensor | None = None,
+    risk_class_weight: torch.Tensor | None = None,
+    cum_direction_weight: float = 0.0,
+    risk_focal_loss: bool = False,
+    focal_gamma: float = 2.0,
 ) -> TrainStepResult:
     model.train()
     total = 0.0
@@ -879,6 +961,11 @@ def train_market_state_epoch(
             direction_weight=direction_weight,
             volatility_weight=volatility_weight,
             risk_weight=risk_weight,
+            cum_direction_weight=cum_direction_weight,
+            direction_class_weight=direction_class_weight,
+            risk_class_weight=risk_class_weight,
+            risk_focal_loss=risk_focal_loss,
+            focal_gamma=focal_gamma,
         )
         aux = out.aux
         loss = loss + 0.08 * aux["vq_loss"] + 0.04 * aux["break_reg_loss"]
