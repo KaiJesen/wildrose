@@ -903,9 +903,17 @@ def evaluate_market_state(
         risk_pred = risk_p.reshape(-1).float()
         out_metrics["risk_positive_rate_true"] = float(risk_true.mean().item())
         out_metrics["risk_positive_rate_pred"] = float(risk_pred.mean().item())
+        risk_tp = ((risk_pred == 1) & (risk_true == 1)).sum().item()
+        risk_fp = ((risk_pred == 1) & (risk_true == 0)).sum().item()
+        risk_fn = ((risk_pred == 0) & (risk_true == 1)).sum().item()
+        out_metrics["risk_precision"] = float(risk_tp / max(1, risk_tp + risk_fp))
+        out_metrics["risk_recall"] = float(risk_tp / max(1, risk_tp + risk_fn))
         for i in range(3):
             out_metrics[f"direction_true_c{i}"] = float(dir_true_counts[i] / dir_true_counts.sum().clamp(min=1))
             out_metrics[f"direction_pred_c{i}"] = float(dir_pred_counts[i] / dir_pred_counts.sum().clamp(min=1))
+            true_i = int(dir_true_counts[i].item())
+            pred_i = int(((dir_p.reshape(-1) == i) & (dir_y.reshape(-1) == i)).sum().item())
+            out_metrics[f"direction_recall_c{i}"] = float(pred_i / max(1, true_i))
         for h in range(ret_p.size(1)):
             ph = ret_p[:, h].numpy()
             yh = ret_y[:, h].numpy()

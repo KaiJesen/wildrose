@@ -40,6 +40,9 @@ htmlcov/
 # 训练用 K 线 CSV 缓存
 data/cache/
 
+# 本地训练权重（体积大，不入库）
+checkpoints/
+
 # 输出图片（demo 默认保存路径）
 *.png
 *.jpg
