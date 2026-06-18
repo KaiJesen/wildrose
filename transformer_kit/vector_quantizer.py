@@ -53,6 +53,7 @@ def soft_code_usage_entropy_loss(
     *,
     temperature: float = 2.0,
     cosine: bool = False,
+    sample_weight: torch.Tensor | None = None,
 ) -> torch.Tensor:
     """可微码分布熵惩罚：基于 softmax(-dist/T) 的软分配，梯度可回传到 encoder。"""
     if z_e.numel() == 0:
@@ -60,7 +61,11 @@ def soft_code_usage_entropy_loss(
     num_codes = embed.size(0)
     d = _compute_distances(z_e, embed, cosine=cosine)
     probs = F.softmax(-d / max(temperature, 1e-4), dim=1)
-    usage = probs.mean(dim=0) + 1e-10
+    if sample_weight is not None and sample_weight.numel() == z_e.size(0):
+        w = sample_weight.type_as(probs) / sample_weight.sum().clamp(min=1e-8)
+        usage = (probs * w.unsqueeze(1)).sum(dim=0) + 1e-10
+    else:
+        usage = probs.mean(dim=0) + 1e-10
     entropy = -(usage * usage.log()).sum()
     max_ent = math.log(num_codes)
     return 1.0 - entropy / max_ent
@@ -141,6 +146,7 @@ class VectorQuantizerEMA(nn.Module):
         training_stochastic_topk: int = 3,
         gumbel_tau: float = 1.0,
         cosine_distance: bool = True,
+        inverse_freq_ema: bool = True,
     ) -> None:
         super().__init__()
         if num_codes < 2:
@@ -154,6 +160,7 @@ class VectorQuantizerEMA(nn.Module):
         self.training_stochastic_topk = training_stochastic_topk
         self.gumbel_tau = gumbel_tau
         self.cosine_distance = cosine_distance
+        self.inverse_freq_ema = inverse_freq_ema
 
         embed = torch.randn(num_codes, dim) * (1.0 / num_codes)
         self.register_buffer("_embed", embed)
@@ -175,6 +182,11 @@ class VectorQuantizerEMA(nn.Module):
 
         if self.training:
             one_hot = F.one_hot(codes, self.num_codes).type_as(z_e)
+            if self.inverse_freq_ema:
+                freq = self._ema_cluster_size / self._ema_cluster_size.sum().clamp(min=self.eps)
+                inv = (1.0 / freq[codes].clamp(min=self.eps)).type_as(z_e)
+                inv = inv / inv.mean().clamp(min=self.eps)
+                one_hot = one_hot * inv.unsqueeze(1)
             cluster_size = one_hot.sum(dim=0)
             embed_sum = one_hot.T @ z_e.detach()
 
@@ -275,8 +287,9 @@ class VectorQuantizerEMA(nn.Module):
             total = self._ema_cluster_size.sum().clamp(min=1e-8)
             frac = self._ema_cluster_size / total
         dominant = frac > max_usage_frac
-        if int(dominant.sum()) > max(1, self.num_codes // 3):
-            worst = frac.topk(max(1, self.num_codes // 3)).indices
+        n_over = int(dominant.sum().item())
+        if n_over > max(1, self.num_codes // 4):
+            worst = frac.topk(max(1, n_over // 2 + 1)).indices
             dom_mask = torch.zeros_like(dominant)
             dom_mask[worst] = True
             dominant = dom_mask

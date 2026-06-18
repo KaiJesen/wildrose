@@ -10,11 +10,13 @@ import torch
 from torch.utils.data import Dataset
 
 from transformer_kit.segment_features import (
-    build_bar_shape_frame,
+    build_bar_feature_frame,
     normalize_segment,
     pad_segments,
     partition_bars_into_segments,
 )
+from transformer_kit.labels import build_market_state_targets
+from transformer_kit.trend_features import DEFAULT_TREND_WINDOWS
 
 
 @dataclass(frozen=True)
@@ -22,9 +24,11 @@ class BarSeriesBundle:
     """全序列 bar 形状特征与切分索引。"""
 
     bars: np.ndarray
+    raw_log_ret: np.ndarray
     train_idx: np.ndarray
     valid_idx: np.ndarray
     test_idx: np.ndarray
+    zscore_window: int = 120
 
 
 def time_ordered_split(
@@ -44,16 +48,20 @@ def time_ordered_split(
 
 
 def global_causal_zscore_bars(bars: np.ndarray, *, window: int = 120) -> np.ndarray:
-    """对 bar 特征逐列做 trailing z-score（因果，无泄漏）。"""
+    """对 bar 特征逐列做 trailing z-score（因果，无泄漏）。
+
+    统计量始终基于原始特征值计算，避免窗口内混入已归一化数据导致无法反标准化。
+    """
+    raw = bars.astype(np.float64, copy=False)
     out = bars.astype(np.float32, copy=True)
     n, f = out.shape
     for j in range(f):
         for i in range(n):
             start = max(0, i - window + 1)
-            seg = out[start : i + 1, j]
-            m = seg.mean()
+            seg = raw[start : i + 1, j]
+            m = float(seg.mean())
             s = float(seg.std()) + 1e-8
-            out[i, j] = (out[i, j] - m) / s
+            out[i, j] = (raw[i, j] - m) / s
     return out
 
 
@@ -63,18 +71,28 @@ def prepare_bar_series(
     train_ratio: float = 0.7,
     valid_ratio: float = 0.15,
     zscore_window: int = 120,
+    use_trend_features: bool = True,
+    trend_windows: tuple[int, ...] = DEFAULT_TREND_WINDOWS,
 ) -> BarSeriesBundle:
-    feat_df, _ = build_bar_shape_frame(df)
-    bars = global_causal_zscore_bars(feat_df.to_numpy(dtype=np.float32), window=zscore_window)
+    feat_df, _ = build_bar_feature_frame(
+        df,
+        use_trend_features=use_trend_features,
+        trend_windows=trend_windows,
+    )
+    feat_arr = feat_df.to_numpy(dtype=np.float32)
+    raw_log_ret = feat_df["log_ret"].to_numpy(dtype=np.float32)
+    bars = global_causal_zscore_bars(feat_arr, window=zscore_window)
     n = bars.shape[0]
     train_idx, valid_idx, test_idx = time_ordered_split(
         n, train_ratio=train_ratio, valid_ratio=valid_ratio
     )
     return BarSeriesBundle(
         bars=bars,
+        raw_log_ret=raw_log_ret,
         train_idx=train_idx,
         valid_idx=valid_idx,
         test_idx=test_idx,
+        zscore_window=zscore_window,
     )
 
 
@@ -192,6 +210,18 @@ def build_sequence_sample_indices(
     return out
 
 
+def trailing_raw_log_ret_stats(
+    raw_log_ret: np.ndarray,
+    anchor: int,
+    *,
+    window: int = 120,
+) -> tuple[float, float]:
+    """与 ``global_causal_zscore_bars`` 一致的 trailing 均值/标准差。"""
+    start = max(0, anchor - window + 1)
+    seg = raw_log_ret[start : anchor + 1]
+    return float(seg.mean()), float(seg.std() + 1e-8)
+
+
 class PatternSequenceDataset(Dataset):
     """Stage 3：连续上下文窗口 + 未来 bar（切分由模型自动完成）。"""
 
@@ -199,9 +229,20 @@ class PatternSequenceDataset(Dataset):
         self,
         bars: np.ndarray,
         sample_indices: list[SequenceSampleIndex],
+        raw_log_ret: np.ndarray | None = None,
+        *,
+        zscore_window: int = 120,
+        return_market_state_targets: bool = False,
+        direction_threshold: float = 0.0,
+        risk_vol_threshold: float = 0.01,
     ) -> None:
         self.bars = bars
         self.sample_indices = sample_indices
+        self.raw_log_ret = raw_log_ret
+        self.zscore_window = zscore_window
+        self.return_market_state_targets = return_market_state_targets
+        self.direction_threshold = float(direction_threshold)
+        self.risk_vol_threshold = float(risk_vol_threshold)
 
     def __len__(self) -> int:
         return len(self.sample_indices)
@@ -210,11 +251,43 @@ class PatternSequenceDataset(Dataset):
         spec = self.sample_indices[i]
         ctx = self.bars[spec.context_start : spec.context_end].astype(np.float32)
         future = self.bars[spec.context_end : spec.future_end].astype(np.float32)
-        return {
+        out = {
             "ctx_bars": torch.from_numpy(ctx),
             "ctx_lengths": torch.tensor(ctx.shape[0], dtype=torch.long),
             "future_bars": torch.from_numpy(future),
         }
+        if self.raw_log_ret is not None:
+            anchor = spec.context_end - 1
+            m, s = trailing_raw_log_ret_stats(
+                self.raw_log_ret, anchor, window=self.zscore_window,
+            )
+            future_raw = self.raw_log_ret[spec.context_end : spec.future_end].astype(np.float32)
+            fut_means: list[float] = []
+            fut_stds: list[float] = []
+            for idx in range(spec.context_end, spec.future_end):
+                fm, fs = trailing_raw_log_ret_stats(
+                    self.raw_log_ret, idx, window=self.zscore_window,
+                )
+                fut_means.append(fm)
+                fut_stds.append(fs)
+            out["future_raw_log_ret"] = torch.from_numpy(future_raw)
+            out["future_log_ret_mean"] = torch.tensor(fut_means, dtype=torch.float32)
+            out["future_log_ret_std"] = torch.tensor(fut_stds, dtype=torch.float32)
+            out["log_ret_mean"] = torch.tensor(m, dtype=torch.float32)
+            out["log_ret_std"] = torch.tensor(s, dtype=torch.float32)
+            if self.return_market_state_targets:
+                tgt = build_market_state_targets(
+                    future_raw,
+                    direction_threshold=self.direction_threshold,
+                    risk_vol_threshold=self.risk_vol_threshold,
+                )
+                out["target_return"] = tgt.future_log_ret
+                out["target_direction"] = tgt.direction_label
+                out["target_volatility"] = tgt.volatility
+                out["target_risk"] = tgt.risk_label
+                if tgt.move_label is not None:
+                    out["target_move"] = tgt.move_label
+        return out
 
 
 def make_synthetic_ohlcv(n: int = 1200, seed: int = 0) -> pd.DataFrame:

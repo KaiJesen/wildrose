@@ -1,0 +1,12 @@
+---
+description: 实验与训练默认使用真实 K 线数据，禁止默认合成数据
+globs: examples/**/*
+alwaysApply: false
+---
+
+# 实验只用真实数据
+
+- 正式实验、消融、报告、回测：**必须使用真实 OHLCV**（默认 `binance_vision` / `BTCUSDT` / `1h` / `365` 天，或用户指定的 `--source` / `--symbol` / `--csv`）。
+- **不要**在无明确要求时使用 `--synthetic`、`make_synthetic_ohlcv()` 或随机生成 K 线作为实验数据；合成数据缺乏市场结构，结论不可信。
+- 无 CLI 参数启动脚本时，调用 `apply_real_data_defaults()`（见 `examples/_train_common.py`），不要回退到 `args.synthetic = True`。
+- `--synthetic` 仅保留给单元调试；若用户要求跑实验，优先 `examples/run_real_data_report.sh` 或显式传入真实数据源参数。

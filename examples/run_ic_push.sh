@@ -32,4 +32,6 @@ echo "=== Stage 3: balanced IC loss ==="
   --output-dir "${S3_OUT}" --checkpoint-dir "${S3_CKPT}" \
   --epochs3 "${EPOCHS3:-40}" --encoder-lr-scale 0.0 \
   --mse-weight 0.7 --step-corr-weight 0.25 --cum-corr-weight 0.35 --rank-weight 0.1 \
-  --sign-weight 0.15 --samples-per-epoch "${SAMPLES_PER_EPOCH:-1500}"
+  --sign-weight 0.15 --anti-lag-weight "${ANTI_LAG_WEIGHT:-0.15}" \
+  --anti-lag-margin "${ANTI_LAG_MARGIN:-0.05}" \
+  --samples-per-epoch "${SAMPLES_PER_EPOCH:-1500}"

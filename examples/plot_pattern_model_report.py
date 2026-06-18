@@ -27,7 +27,7 @@ if str(_ROOT) not in sys.path:
 if str(_EX) not in sys.path:
     sys.path.insert(0, str(_EX))
 
-from _train_common import add_data_args, add_segment_args, add_train_args, add_vq_args, fetch_ohlcv_df
+from _train_common import add_data_args, add_segment_args, add_train_args, add_vq_args, apply_real_data_defaults, fetch_ohlcv_df
 from transformer_kit.causal_transformer import CausalTransformerConfig
 from transformer_kit.pattern_encoder import PatternEncoderConfig, PatternVQVAE
 from transformer_kit.pattern_model import KlinePatternPredictor, PatternPredictorConfig
@@ -681,8 +681,7 @@ def load_models_from_checkpoint(
 
 def main() -> int:
     args = parse_args()
-    if len(sys.argv) == 1:
-        args.synthetic = True
+    apply_real_data_defaults(args)
 
     plt.rcParams["font.sans-serif"] = ["DejaVu Sans", "SimHei", "Arial Unicode MS", "sans-serif"]
     plt.rcParams["axes.unicode_minus"] = False

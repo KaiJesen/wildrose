@@ -9,7 +9,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from transformer_kit.causal_transformer import causal_attention_mask
-from transformer_kit.segment_encoder import SegmentDecoder, SegmentEncoderConfig, SegmentMHAEncoder
+from transformer_kit.segment_encoder import SegmentCNNEncoder, SegmentDecoder, SegmentEncoderConfig, SegmentMHAEncoder
 from transformer_kit.vector_quantizer import VectorQuantizer, VectorQuantizerEMA, VectorQuantizerOutput
 
 
@@ -36,6 +36,28 @@ class AutoSegmentConfig:
     break_vol_weight: float = 0.12
     break_vol_window: int = 12
     break_vol_top_frac: float = 0.12
+    use_segment_cnn: bool = True
+    segment_cnn_weight: float = 1.0
+    vq_inverse_freq_ema: bool = True
+
+
+def flat_segment_importance_weights(
+    num_segments: torch.Tensor,
+    *,
+    max_segments: int,
+    break_seg_weight: float = 2.0,
+    background_seg_weight: float = 0.35,
+) -> torch.Tensor:
+    """为 flat 有效 segment 向量生成重要性权重（切分后段 > 首段背景）。"""
+    b = num_segments.size(0)
+    device = num_segments.device
+    seg_idx = torch.arange(max_segments, device=device).unsqueeze(0).expand(b, -1)
+    active = seg_idx < num_segments.unsqueeze(1)
+    w = torch.full((b, max_segments), background_seg_weight, device=device, dtype=torch.float32)
+    w = torch.where((seg_idx > 0) & active, torch.full_like(w, break_seg_weight), w)
+    w = w * active.float()
+    flat_active = active.reshape(-1)
+    return w.reshape(-1)[flat_active]
 
 
 @dataclass
@@ -151,6 +173,21 @@ def _segment_encode_masked(
     z = flat_bars.new_zeros(n, d)
     if flat_active.any():
         z[flat_active] = segment_encoder(flat_bars[flat_active], flat_lengths[flat_active])
+    return z
+
+
+def _cnn_encode_masked(
+    segment_cnn: SegmentCNNEncoder,
+    flat_bars: torch.Tensor,
+    flat_lengths: torch.Tensor,
+    flat_active: torch.Tensor,
+) -> torch.Tensor:
+    """仅对 active 段做 CNN 编码；padding 槽位填零向量。"""
+    n = flat_bars.size(0)
+    d = segment_cnn.cfg.d_model
+    z = flat_bars.new_zeros(n, d)
+    if flat_active.any():
+        z[flat_active] = segment_cnn(flat_bars[flat_active], flat_lengths[flat_active])
     return z
 
 
@@ -301,13 +338,19 @@ class AutoSegmentVQEncoder(nn.Module):
             max_len=cfg.max_seg_len,
         )
         self.segment_encoder = SegmentMHAEncoder(seg_cfg)
+        self.segment_cnn = SegmentCNNEncoder(seg_cfg) if cfg.use_segment_cnn else None
         if cfg.vq_use_ema:
             self.vq: VectorQuantizer | VectorQuantizerEMA = VectorQuantizerEMA(
-                cfg.num_codes, cfg.d_model, beta=cfg.vq_beta, decay=cfg.vq_ema_decay
+                cfg.num_codes,
+                cfg.d_model,
+                beta=cfg.vq_beta,
+                decay=cfg.vq_ema_decay,
+                inverse_freq_ema=cfg.vq_inverse_freq_ema,
             )
         else:
             self.vq = VectorQuantizer(cfg.num_codes, cfg.d_model, beta=cfg.vq_beta)
         self.token_proj = nn.Linear(cfg.d_model, cfg.d_model)
+        self.cnn_fusion_norm = nn.LayerNorm(cfg.d_model)
 
     def encode(
         self,
@@ -334,6 +377,9 @@ class AutoSegmentVQEncoder(nn.Module):
         z = _segment_encode_masked(self.segment_encoder, flat_bars, flat_lengths, flat_active)
         vq_out = self.vq(z)
         tokens_flat = self.token_proj(vq_out.z_q)
+        if self.segment_cnn is not None and self.cfg.segment_cnn_weight > 0:
+            cnn_z = _cnn_encode_masked(self.segment_cnn, flat_bars, flat_lengths, flat_active)
+            tokens_flat = self.cnn_fusion_norm(tokens_flat + self.cfg.segment_cnn_weight * cnn_z)
 
         tokens = tokens_flat.view(b, s, -1)
         codes = vq_out.codes.view(b, s)

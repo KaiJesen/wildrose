@@ -25,6 +25,8 @@ CKPT="${CHECKPOINT_DIR:-checkpoints/real_btc_raw_context_direction_calibrated}"
   --cum-corr-weight "${CUM_CORR_WEIGHT:-0.3}" \
   --rank-weight "${RANK_WEIGHT:-0.1}" \
   --direction-weight "${DIRECTION_WEIGHT:-0.4}" \
+  --vol-focus-weight "${VOL_FOCUS_WEIGHT:-2.0}" \
+  --vol-focus-top-frac "${VOL_FOCUS_TOP_FRAC:-0.2}" \
   --sign-weight "${SIGN_WEIGHT:-0.15}" \
   --samples-per-epoch "${SAMPLES_PER_EPOCH:-1500}" \
   --device "${DEVICE:-cpu}"

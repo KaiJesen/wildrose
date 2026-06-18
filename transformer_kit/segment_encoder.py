@@ -83,6 +83,66 @@ class SegmentMHAEncoder(nn.Module):
         return self.out_norm(h[:, 0, :])
 
 
+class SegmentCNNEncoder(nn.Module):
+    """变长 K 柱 → CNN 局部形态向量。
+
+    多个 kernel 并行捕捉 3/5/9 根 K 线局部组合，再做 masked mean/max pooling。
+    """
+
+    def __init__(
+        self,
+        cfg: SegmentEncoderConfig,
+        *,
+        kernels: tuple[int, ...] = (3, 5, 9),
+    ) -> None:
+        super().__init__()
+        self.cfg = cfg
+        self.kernels = kernels
+        branch_dim = max(8, cfg.d_model // (2 * len(kernels)))
+        self.branches = nn.ModuleList(
+            [
+                nn.Sequential(
+                    nn.Conv1d(cfg.feat_dim, branch_dim, kernel_size=k, padding=k // 2),
+                    nn.GELU(),
+                    nn.Conv1d(branch_dim, branch_dim, kernel_size=1),
+                    nn.GELU(),
+                )
+                for k in kernels
+            ]
+        )
+        pooled_dim = branch_dim * len(kernels) * 2
+        self.out = nn.Sequential(
+            nn.Linear(pooled_dim, cfg.d_model),
+            nn.GELU(),
+            nn.LayerNorm(cfg.d_model),
+        )
+
+    def forward(self, bars: torch.Tensor, lengths: torch.Tensor) -> torch.Tensor:
+        if bars.dim() != 3:
+            raise ValueError(f"bars must be [B,L,F], got {tuple(bars.shape)}")
+        b, max_len, f = bars.shape
+        if f != self.cfg.feat_dim:
+            raise ValueError(f"feat_dim mismatch: cfg={self.cfg.feat_dim}, got {f}")
+        if lengths.shape != (b,):
+            raise ValueError(f"lengths shape {tuple(lengths.shape)} != ({b},)")
+        if (lengths > max_len).any() or (lengths < 1).any():
+            raise ValueError("lengths must be in [1, L]")
+
+        mask = _lengths_to_pad_mask(lengths, max_len)
+        x = bars.transpose(1, 2)
+        pooled: list[torch.Tensor] = []
+        valid = (~mask).unsqueeze(1).float()
+        denom = valid.sum(dim=2).clamp(min=1.0)
+        for branch in self.branches:
+            h = branch(x)
+            h = h.masked_fill(mask.unsqueeze(1), 0.0)
+            mean = h.sum(dim=2) / denom
+            mx = h.masked_fill(mask.unsqueeze(1), float("-inf")).amax(dim=2)
+            mx = torch.where(torch.isfinite(mx), mx, torch.zeros_like(mx))
+            pooled.extend([mean, mx])
+        return self.out(torch.cat(pooled, dim=1))
+
+
 class SegmentDecoder(nn.Module):
     """片段向量 → 重建归一化 bar 序列 ``[B, L_max, F]``（位置 query + cross-attention）。"""
 

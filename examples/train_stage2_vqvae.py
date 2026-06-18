@@ -22,11 +22,11 @@ if str(_ROOT) not in sys.path:
 if str(_EX) not in sys.path:
     sys.path.insert(0, str(_EX))
 
-from _train_common import add_data_args, add_segment_args, add_train_args, add_vq_args, fetch_ohlcv_df
+from _train_common import add_data_args, add_feature_args, add_segment_args, add_train_args, add_vq_args, apply_real_data_defaults, fetch_ohlcv_df, prepare_bar_series_from_args
 from transformer_kit.auto_segment_encoder import AutoSegmentVQVAE
 from transformer_kit.pattern_encoder import pattern_config_from_args
 from transformer_kit.schedulers import build_adamw_with_warmup_cosine_restarts
-from transformer_kit.segment_dataset import BarWindowDataset, prepare_bar_series
+from transformer_kit.segment_dataset import BarWindowDataset
 from transformer_kit.train_utils import load_checkpoint, save_checkpoint
 from transformer_kit.training import evaluate_auto_vqvae, train_auto_vqvae_epoch
 
@@ -34,6 +34,7 @@ from transformer_kit.training import evaluate_auto_vqvae, train_auto_vqvae_epoch
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Stage 2: fine-tune auto-segment VQ-VAE")
     add_data_args(p)
+    add_feature_args(p)
     add_train_args(p)
     add_segment_args(p)
     add_vq_args(p)
@@ -47,13 +48,12 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> int:
     args = parse_args()
-    if len(sys.argv) == 1:
-        args.synthetic = True
+    apply_real_data_defaults(args)
 
     torch.manual_seed(args.seed)
     device = torch.device(args.device)
 
-    bundle = prepare_bar_series(fetch_ohlcv_df(args))
+    bundle = prepare_bar_series_from_args(fetch_ohlcv_df(args), args)
     train_loader = DataLoader(
         BarWindowDataset(bundle.bars, bundle.train_idx, window=args.context_bars,
                          samples_per_epoch=args.samples_per_epoch, seed=args.seed),

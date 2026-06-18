@@ -1,10 +1,13 @@
 #!/usr/bin/env bash
-# 三阶段形态编码训练（改进版默认超参）
+# 三阶段形态编码训练（默认真实 K 线：Binance Vision BTCUSDT 1h）
 set -euo pipefail
 STAGE="${STAGE:-all}"
 PYTHON_BIN="${PYTHON_BIN:-python3}"
 CHECKPOINT_DIR="${CHECKPOINT_DIR:-checkpoints/pattern}"
-SYNTHETIC="${SYNTHETIC:-1}"
+SOURCE="${SOURCE:-binance_vision}"
+SYMBOL="${SYMBOL:-BTCUSDT}"
+INTERVAL="${INTERVAL:-1h}"
+DAYS="${DAYS:-365}"
 EPOCHS1="${EPOCHS1:-30}"
 EPOCHS2="${EPOCHS2:-40}"
 EPOCHS3="${EPOCHS3:-40}"
@@ -12,9 +15,11 @@ D_MODEL="${D_MODEL:-256}"
 NUM_CODES="${NUM_CODES:-16}"
 
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
-COMMON=( )
-[[ "${SYNTHETIC}" -eq 1 ]] && COMMON+=( "--synthetic" )
-COMMON+=( "--checkpoint-dir" "${CHECKPOINT_DIR}" "--d-model" "${D_MODEL}" "--num-codes" "${NUM_CODES}" )
+COMMON=(
+  "--source" "${SOURCE}" "--symbol" "${SYMBOL}" "--interval" "${INTERVAL}" "--days" "${DAYS}"
+  "--checkpoint-dir" "${CHECKPOINT_DIR}" "--d-model" "${D_MODEL}" "--num-codes" "${NUM_CODES}"
+)
+[[ "${SYNTHETIC:-0}" -eq 1 ]] && COMMON+=( "--synthetic" )
 
 run_stage1() {
   "${PYTHON_BIN}" examples/train_stage1_segment_encoder.py "${COMMON[@]}" --epochs "${EPOCHS1}"

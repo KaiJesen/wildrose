@@ -18,12 +18,12 @@ if str(_ROOT) not in sys.path:
 if str(_EX) not in sys.path:
     sys.path.insert(0, str(_EX))
 
-from _train_common import add_data_args, add_segment_args, add_stage3_loss_args, add_train_args, add_vq_args, fetch_ohlcv_df
+from _train_common import add_data_args, add_feature_args, add_segment_args, add_stage3_loss_args, add_train_args, add_vq_args, apply_real_data_defaults, fetch_ohlcv_df, prepare_bar_series_from_args
 from transformer_kit.causal_transformer import CausalTransformerConfig
 from transformer_kit.pattern_encoder import pattern_config_from_args
 from transformer_kit.pattern_model import KlinePatternPredictor, PatternPredictorConfig
 from transformer_kit.schedulers import build_adamw_with_warmup_cosine_restarts
-from transformer_kit.segment_dataset import PatternSequenceDataset, build_sequence_sample_indices, prepare_bar_series
+from transformer_kit.segment_dataset import PatternSequenceDataset, build_sequence_sample_indices
 from transformer_kit.train_utils import load_auto_encoder, save_checkpoint
 from transformer_kit.training import evaluate_stage3, train_stage3_epoch
 
@@ -31,13 +31,13 @@ from transformer_kit.training import evaluate_stage3, train_stage3_epoch
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Stage 3: auto-segment tokens + predictor")
     add_data_args(p)
+    add_feature_args(p)
     add_train_args(p)
     add_segment_args(p)
     add_vq_args(p)
     add_stage3_loss_args(p)
-    p.add_argument("--context-bars", type=int, default=128)
-    p.add_argument("--max-segments", type=int, default=16)
     p.add_argument("--pred-horizon", type=int, default=5)
+    p.add_argument("--pred-feat-dim", type=int, default=1)
     p.add_argument("--stride", type=int, default=8)
     p.add_argument("--trunk-layers", type=int, default=2)
     p.add_argument("--aux-vq-weight", type=float, default=0.1)
@@ -50,12 +50,11 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> int:
     args = parse_args()
-    if len(sys.argv) == 1:
-        args.synthetic = True
+    apply_real_data_defaults(args)
 
     torch.manual_seed(args.seed)
     device = torch.device(args.device)
-    bundle = prepare_bar_series(fetch_ohlcv_df(args))
+    bundle = prepare_bar_series_from_args(fetch_ohlcv_df(args), args)
 
     def split(idx):
         return build_sequence_sample_indices(
@@ -63,11 +62,11 @@ def main() -> int:
             stride=args.stride, index_min=int(idx.min()), index_max=int(idx.max()),
         )
 
-    train_loader = DataLoader(PatternSequenceDataset(bundle.bars, split(bundle.train_idx)),
+    train_loader = DataLoader(PatternSequenceDataset(bundle.bars, split(bundle.train_idx), bundle.raw_log_ret, zscore_window=bundle.zscore_window),
                               batch_size=args.batch_size, shuffle=True, drop_last=True)
-    valid_loader = DataLoader(PatternSequenceDataset(bundle.bars, split(bundle.valid_idx)),
+    valid_loader = DataLoader(PatternSequenceDataset(bundle.bars, split(bundle.valid_idx), bundle.raw_log_ret, zscore_window=bundle.zscore_window),
                               batch_size=args.batch_size, shuffle=False)
-    test_loader = DataLoader(PatternSequenceDataset(bundle.bars, split(bundle.test_idx)),
+    test_loader = DataLoader(PatternSequenceDataset(bundle.bars, split(bundle.test_idx), bundle.raw_log_ret, zscore_window=bundle.zscore_window),
                              batch_size=args.batch_size, shuffle=False)
 
     auto_cfg = pattern_config_from_args(args)
@@ -75,9 +74,10 @@ def main() -> int:
         auto_segment=auto_cfg,
         trunk=CausalTransformerConfig(d_model=args.d_model, n_heads=args.n_heads, n_layers=args.trunk_layers),
         pred_horizon=args.pred_horizon,
-        pred_feat_dim=1,
+        pred_feat_dim=args.pred_feat_dim,
         pool_mode=args.pool_mode,
         learnable_scale=not args.no_learnable_scale,
+        use_horizon_head=args.horizon_head,
     )).to(device)
 
     init_path = Path(args.init_checkpoint)
@@ -108,6 +108,23 @@ def main() -> int:
         sign_weight=args.sign_weight,
         rank_weight=args.rank_weight,
         direction_weight=args.direction_weight,
+        shape_weight=args.shape_weight,
+        path_shape_weight=args.path_shape_weight,
+        cum_magnitude_weight=getattr(args, "cum_magnitude_weight", 0.0),
+        relative_magnitude_weight=getattr(args, "relative_magnitude_weight", 0.0),
+        raw_mse_weight=getattr(args, "raw_mse_weight", 0.0),
+        vol_focus_weight=args.vol_focus_weight,
+        vol_focus_top_frac=args.vol_focus_top_frac,
+        move_focus_weight=getattr(args, "move_focus_weight", 0.0),
+        move_focus_scale=getattr(args, "move_focus_scale", 3.0),
+        break_focus_weight=getattr(args, "break_focus_weight", 0.0),
+        break_focus_tail=getattr(args, "break_focus_tail", 16),
+        code_supervision_weight=getattr(args, "code_supervision_weight", 0.0),
+        direction_seq_only=getattr(args, "direction_seq_only", False),
+        direction_seq_weight=getattr(args, "direction_seq_weight", 1.0),
+        direction_seq_crf=getattr(args, "direction_seq_crf", False),
+        anti_lag_weight=args.anti_lag_weight,
+        anti_lag_margin=args.anti_lag_margin,
         use_ic_loss=not args.no_ic_loss,
         **corr_kw,
     )
@@ -119,14 +136,28 @@ def main() -> int:
             best = va["loss"]
             save_checkpoint(ckpt_dir / "stage3_predictor.pt", {"stage": 3, "model": model.state_dict()})
             mark = " *saved"
-        extra = f" ic={va['ic']:.3f}" if "ic" in va else ""
-        if "direction_head_acc" in va:
-            extra += f" head_dir={va['direction_head_acc']:.1%}"
+        if args.direction_seq_only:
+            extra = (
+                f" step_dir={va.get('step_direction_acc', 0):.1%}"
+                f" all5={va.get('all5_direction_acc', 0):.1%}"
+                f" cum_dir={va.get('cum_direction_acc', 0):.1%}"
+            )
+        else:
+            extra = f" ic={va['ic']:.3f}" if "ic" in va else ""
+            if "direction_head_acc" in va:
+                extra += f" head_dir={va['direction_head_acc']:.1%}"
         print(f"  epoch {epoch:03d} train={tr.loss:.6f} valid={va['loss']:.6f}{extra}{mark}")
 
     te = evaluate_stage3(model, test_loader, device, **s3kw)
     print(f"  test loss={te['loss']:.6f}", end="")
-    if "ic" in te:
+    if args.direction_seq_only:
+        print(
+            f" step_dir={te.get('step_direction_acc', 0):.1%}"
+            f" all5={te.get('all5_direction_acc', 0):.1%}"
+            f" cum_dir={te.get('cum_direction_acc', 0):.1%}"
+            f" head_dir={te.get('direction_head_acc', 0):.1%}"
+        )
+    elif "ic" in te:
         print(
             f" ic={te['ic']:.3f} dir={te.get('direction_acc', 0):.1%} "
             f"head_dir={te.get('direction_head_acc', 0):.1%}"

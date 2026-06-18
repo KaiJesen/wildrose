@@ -1,6 +1,6 @@
 """K 线形态片段的特征工程（尺度不变、严格因果）。
 
-每个 bar 转为形状特征；片段内锚定首根 open，消除绝对价格影响。
+每个 bar 转为形状特征；可选附加多尺度线性趋势特征（斜率 / 残差离散 / R² / 强度）。
 """
 
 from __future__ import annotations
@@ -9,6 +9,35 @@ import numpy as np
 import pandas as pd
 
 from market_data.schema import COL_CLOSE, COL_HIGH, COL_LOW, COL_OPEN, COL_VOLUME
+from transformer_kit.trend_features import (
+    DEFAULT_TREND_WINDOWS,
+    causal_log_price_trend_features,
+    trend_column_names,
+    trend_feature_dim,
+)
+
+BAR_SHAPE_COLS: tuple[str, ...] = ("log_ret", "body_ratio", "upper_wick", "lower_wick", "log_vol")
+BAR_SHAPE_DIM: int = len(BAR_SHAPE_COLS)
+LOG_RET_COL: int = 0
+
+
+def feat_dim(*, use_trend_features: bool = True, windows: tuple[int, ...] = DEFAULT_TREND_WINDOWS) -> int:
+    """单 bar 特征维度。"""
+    dim = BAR_SHAPE_DIM
+    if use_trend_features:
+        dim += trend_feature_dim(windows)
+    return dim
+
+
+def all_feature_cols(
+    *,
+    use_trend_features: bool = True,
+    windows: tuple[int, ...] = DEFAULT_TREND_WINDOWS,
+) -> list[str]:
+    cols = list(BAR_SHAPE_COLS)
+    if use_trend_features:
+        cols.extend(trend_column_names(windows))
+    return cols
 
 
 def bars_to_shape_features(
@@ -50,20 +79,40 @@ def bars_to_shape_features(
 
 
 def build_bar_shape_frame(df: pd.DataFrame) -> tuple[pd.DataFrame, list[str]]:
-    """从 OHLCV DataFrame 构建 bar 级形状特征表。"""
+    """从 OHLCV DataFrame 构建 bar 级形状特征表（不含趋势特征）。"""
+    return build_bar_feature_frame(df, use_trend_features=False)
+
+
+def build_bar_feature_frame(
+    df: pd.DataFrame,
+    *,
+    use_trend_features: bool = True,
+    trend_windows: tuple[int, ...] = DEFAULT_TREND_WINDOWS,
+) -> tuple[pd.DataFrame, list[str]]:
+    """从 OHLCV DataFrame 构建 bar 级特征表（形状 + 可选多尺度趋势）。"""
     for col in (COL_OPEN, COL_HIGH, COL_LOW, COL_CLOSE, COL_VOLUME):
         if col not in df.columns:
             raise KeyError(f"missing column {col!r}")
 
-    arr = bars_to_shape_features(
+    shape_arr = bars_to_shape_features(
         df[COL_OPEN].to_numpy(),
         df[COL_HIGH].to_numpy(),
         df[COL_LOW].to_numpy(),
         df[COL_CLOSE].to_numpy(),
         df[COL_VOLUME].to_numpy(),
     )
-    cols = ["log_ret", "body_ratio", "upper_wick", "lower_wick", "log_vol"]
-    feat_df = pd.DataFrame(arr, columns=cols)
+    cols = list(BAR_SHAPE_COLS)
+    parts = [shape_arr]
+
+    if use_trend_features:
+        trend_arr = causal_log_price_trend_features(
+            df[COL_CLOSE].to_numpy(),
+            windows=trend_windows,
+        )
+        cols.extend(trend_column_names(trend_windows))
+        parts.append(trend_arr)
+
+    feat_df = pd.DataFrame(np.concatenate(parts, axis=-1), columns=cols)
     return feat_df, cols
 
 
