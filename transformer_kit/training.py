@@ -73,6 +73,9 @@ def market_state_loss(
     volatility_weight: float = 0.15,
     risk_weight: float = 0.05,
     cum_direction_weight: float = 0.0,
+    cum_return_weight: float = 0.0,
+    cum_direction_head_weight: float = 0.0,
+    return_consistency_weight: float = 0.0,
     direction_class_weight: torch.Tensor | None = None,
     risk_class_weight: torch.Tensor | None = None,
     risk_focal_loss: bool = False,
@@ -98,23 +101,44 @@ def market_state_loss(
         )
     else:
         risk_loss = F.cross_entropy(risk_logits, risk_targets, weight=risk_class_weight)
-    cum_dir_loss = F.binary_cross_entropy_with_logits(
+    cum_dir_from_return_loss = F.binary_cross_entropy_with_logits(
         output.return_pred.sum(dim=1),
         (target.future_log_ret.sum(dim=1) > 0).float(),
     )
+    zero = ret_loss.new_zeros(())
+    cum_return_loss = zero
+    cum_dir_head_loss = zero
+    consistency_loss = zero
+    if output.cum_return_pred is not None:
+        target_cum_return = target.future_log_ret.sum(dim=1)
+        cum_return_loss = F.huber_loss(output.cum_return_pred, target_cum_return, delta=0.5)
+        consistency_loss = F.huber_loss(
+            output.return_pred.sum(dim=1),
+            output.cum_return_pred.detach(),
+            delta=0.5,
+        )
+    if output.cum_direction_logit is not None:
+        target_cum_dir = (target.future_log_ret.sum(dim=1) > 0).float()
+        cum_dir_head_loss = F.binary_cross_entropy_with_logits(output.cum_direction_logit, target_cum_dir)
     total = (
         return_weight * ret_loss
         + direction_weight * dir_loss
         + volatility_weight * vol_loss
         + risk_weight * risk_loss
-        + cum_direction_weight * cum_dir_loss
+        + cum_direction_weight * cum_dir_from_return_loss
+        + cum_return_weight * cum_return_loss
+        + cum_direction_head_weight * cum_dir_head_loss
+        + return_consistency_weight * consistency_loss
     )
     return total, {
         "return_loss": float(ret_loss.detach()),
         "direction_loss": float(dir_loss.detach()),
         "volatility_loss": float(vol_loss.detach()),
         "risk_loss": float(risk_loss.detach()),
-        "cum_direction_loss": float(cum_dir_loss.detach()),
+        "cum_direction_from_return_loss": float(cum_dir_from_return_loss.detach()),
+        "cum_return_loss": float(cum_return_loss.detach()),
+        "cum_direction_head_loss": float(cum_dir_head_loss.detach()),
+        "return_consistency_loss": float(consistency_loss.detach()),
     }
 
 
@@ -821,6 +845,9 @@ def evaluate_market_state(
     direction_class_weight: torch.Tensor | None = None,
     risk_class_weight: torch.Tensor | None = None,
     cum_direction_weight: float = 0.0,
+    cum_return_weight: float = 0.0,
+    cum_direction_head_weight: float = 0.0,
+    return_consistency_weight: float = 0.0,
     risk_focal_loss: bool = False,
     focal_gamma: float = 2.0,
     with_diagnostics: bool = False,
@@ -836,6 +863,8 @@ def evaluate_market_state(
     vol_tgts: list[torch.Tensor] = []
     risk_preds: list[torch.Tensor] = []
     risk_tgts: list[torch.Tensor] = []
+    cum_return_preds: list[torch.Tensor] = []
+    cum_direction_logits: list[torch.Tensor] = []
     for batch in loader:
         ctx = batch["ctx_bars"].to(device)
         ctx_len = batch["ctx_lengths"].to(device)
@@ -857,6 +886,9 @@ def evaluate_market_state(
             volatility_weight=volatility_weight,
             risk_weight=risk_weight,
             cum_direction_weight=cum_direction_weight,
+            cum_return_weight=cum_return_weight,
+            cum_direction_head_weight=cum_direction_head_weight,
+            return_consistency_weight=return_consistency_weight,
             direction_class_weight=direction_class_weight,
             risk_class_weight=risk_class_weight,
             risk_focal_loss=risk_focal_loss,
@@ -873,6 +905,10 @@ def evaluate_market_state(
         vol_tgts.append(tgt.volatility.detach().cpu())
         risk_preds.append(out.risk_logits.argmax(dim=-1).detach().cpu())
         risk_tgts.append(tgt.risk_label.detach().cpu())
+        if out.cum_return_pred is not None:
+            cum_return_preds.append(out.cum_return_pred.detach().cpu())
+        if out.cum_direction_logit is not None:
+            cum_direction_logits.append(out.cum_direction_logit.detach().cpu())
     ret_p = torch.cat(ret_preds, dim=0)
     ret_y = torch.cat(ret_tgts, dim=0)
     dir_p = torch.cat(dir_preds, dim=0)
@@ -881,16 +917,36 @@ def evaluate_market_state(
     vol_y = torch.cat(vol_tgts, dim=0)
     risk_p = torch.cat(risk_preds, dim=0)
     risk_y = torch.cat(risk_tgts, dim=0)
+    true_cum_return = ret_y.sum(dim=1)
+    pred_cum_from_return = ret_p.sum(dim=1)
+    if cum_return_preds:
+        pred_cum_return = torch.cat(cum_return_preds, dim=0)
+    else:
+        pred_cum_return = pred_cum_from_return
+    if cum_direction_logits:
+        pred_cum_dir_head = torch.cat(cum_direction_logits, dim=0)
+    else:
+        pred_cum_dir_head = pred_cum_from_return
     pr, yr = ret_p.reshape(-1).numpy(), ret_y.reshape(-1).numpy()
     return_ic = float(np.corrcoef(pr, yr)[0, 1]) if pr.std() > 1e-8 and yr.std() > 1e-8 else 0.0
-    cum_direction_acc = float(((ret_p.sum(dim=1) > 0) == (ret_y.sum(dim=1) > 0)).float().mean().item())
+    cum_direction_acc = float(((pred_cum_from_return > 0) == (true_cum_return > 0)).float().mean().item())
+    cpr, cyr = pred_cum_return.numpy(), true_cum_return.numpy()
+    cum_return_ic = float(np.corrcoef(cpr, cyr)[0, 1]) if cpr.std() > 1e-8 and cyr.std() > 1e-8 else 0.0
+    cum_direction_head_acc = float(((pred_cum_dir_head > 0) == (true_cum_return > 0)).float().mean().item())
+    cum_direction_from_return_acc = float(((pred_cum_from_return > 0) == (true_cum_return > 0)).float().mean().item())
+    step_cum_return_gap_mae = float(torch.mean(torch.abs(pred_cum_from_return - pred_cum_return)).item())
     out_metrics: dict[str, float] = {
         "loss": total / max(1, n),
         "direction_acc": float((dir_p == dir_y).float().mean().item()),
         "direction_macro_f1": _macro_f1_score(dir_p.reshape(-1), dir_y.reshape(-1), num_classes=3),
         "cum_direction_acc": cum_direction_acc,
         "return_ic": return_ic,
+        "cum_return_ic": cum_return_ic,
         "return_mae": float(torch.mean(torch.abs(ret_p - ret_y)).item()),
+        "cum_return_mae": float(torch.mean(torch.abs(pred_cum_return - true_cum_return)).item()),
+        "cum_direction_head_acc": cum_direction_head_acc,
+        "cum_direction_from_return_acc": cum_direction_from_return_acc,
+        "step_cum_return_gap_mae": step_cum_return_gap_mae,
         "volatility_mae": float(torch.mean(torch.abs(vol_p - vol_y)).item()),
         "risk_f1": _macro_f1_score(risk_p.reshape(-1), risk_y.reshape(-1), num_classes=2),
         "pred_return_std": float(ret_p.reshape(-1).std().item()),
@@ -942,6 +998,9 @@ def train_market_state_epoch(
     direction_class_weight: torch.Tensor | None = None,
     risk_class_weight: torch.Tensor | None = None,
     cum_direction_weight: float = 0.0,
+    cum_return_weight: float = 0.0,
+    cum_direction_head_weight: float = 0.0,
+    return_consistency_weight: float = 0.0,
     risk_focal_loss: bool = False,
     focal_gamma: float = 2.0,
 ) -> TrainStepResult:
@@ -970,6 +1029,9 @@ def train_market_state_epoch(
             volatility_weight=volatility_weight,
             risk_weight=risk_weight,
             cum_direction_weight=cum_direction_weight,
+            cum_return_weight=cum_return_weight,
+            cum_direction_head_weight=cum_direction_head_weight,
+            return_consistency_weight=return_consistency_weight,
             direction_class_weight=direction_class_weight,
             risk_class_weight=risk_class_weight,
             risk_focal_loss=risk_focal_loss,

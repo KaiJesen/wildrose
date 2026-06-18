@@ -59,16 +59,45 @@ def parse_args() -> argparse.Namespace:
         help="加载完整 market-state 模型权重（用于从上一轮 best 微调）",
     )
     p.add_argument("--encoder-lr-scale", type=float, default=0.05)
-    p.add_argument("--target-stage", choices=["usable", "balanced_mature", "cum_return_recovery"], default="cum_return_recovery")
-    p.add_argument("--report-dir", default="reports/0060_market_state_cum_return_recovery")
+    p.add_argument(
+        "--target-stage",
+        choices=["usable", "balanced_mature", "cum_return_recovery", "return_direction_branch"],
+        default="return_direction_branch",
+    )
+    p.add_argument("--report-dir", default="reports/0062c_market_state_cum_return_stabilized")
     p.add_argument("--dpi", type=int, default=140)
-    p.add_argument("--return-weight", type=float, default=0.38)
-    p.add_argument("--direction-weight", type=float, default=0.42)
-    p.add_argument("--volatility-weight", type=float, default=0.12)
-    p.add_argument("--risk-weight", type=float, default=0.08)
+    p.add_argument("--return-weight", type=float, default=0.35)
+    p.add_argument("--direction-weight", type=float, default=0.30)
+    p.add_argument("--volatility-weight", type=float, default=0.10)
+    p.add_argument("--risk-weight", type=float, default=0.09)
+    p.add_argument("--cum-return-weight", type=float, default=0.18)
+    p.add_argument("--cum-direction-head-weight", type=float, default=0.03)
+    p.add_argument("--return-consistency-weight", type=float, default=0.01)
+    p.add_argument("--use-cum-heads", action="store_true")
+    p.add_argument("--use-horizon-return-head", action="store_true")
+    p.add_argument("--detach-risk-vol-heads", action="store_true")
+    p.add_argument("--return-direction-hidden-mult", type=float, default=1.0)
     p.add_argument("--direction-threshold-quantile", type=float, default=0.25)
     p.add_argument("--risk-threshold-quantile", type=float, default=0.70)
     p.add_argument("--use-class-weights", action="store_true", help="direction/risk CE 使用 train 类别权重（阶段 B）")
+    p.add_argument(
+        "--use-direction-class-weights",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="direction CE 类别权重（默认跟随 use_class_weights）",
+    )
+    p.add_argument(
+        "--use-risk-class-weights",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="risk CE 类别权重（默认跟随 use_class_weights）",
+    )
+    p.add_argument(
+        "--detach-risk-vol-after-epoch",
+        type=int,
+        default=0,
+        help="从该 epoch 起启用 detach_risk_vol_heads（0=不启用）",
+    )
     p.add_argument("--risk-focal-loss", action="store_true", help="risk 头使用 focal loss（0053 阶段 C）")
     p.add_argument("--focal-gamma", type=float, default=2.0)
     p.add_argument("--cum-direction-weight", type=float, default=0.045, help="累计方向辅助损失权重")
@@ -78,20 +107,23 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--bias-stop-return-ic", type=int, default=5, help="valid return_ic 连续<=0 则提前停止")
     p.add_argument("--bias-stop-cum-dir", type=float, default=0.53, help="valid cum_direction_acc 连续低于此值则停止")
     p.set_defaults(
-        epochs=40,
+        epochs=30,
         batch_size=64,
         d_model=128,
         n_heads=4,
         encoder_layers=2,
         lr=6e-5,
         encoder_lr_scale=0.0,
-        checkpoint_dir="checkpoints/0060_market_state_cum_return_recovery",
-        report_dir="reports/0060_market_state_cum_return_recovery",
+        checkpoint_dir="checkpoints/0062c_market_state_cum_return_stabilized",
+        report_dir="reports/0062c_market_state_cum_return_stabilized",
         use_class_weights=True,
-        balanced_class_weights=True,
-        init_market_checkpoint="checkpoints/0059c_market_state_balanced_mature/market_state_best.pt",
-        cum_direction_weight=0.045,
+        balanced_class_weights=False,
+        init_market_checkpoint="checkpoints/0060_market_state_cum_return_recovery/market_state_best.pt",
+        cum_direction_weight=0.0,
         min_valid_risk_f1=0.45,
+        use_cum_heads=True,
+        use_horizon_return_head=True,
+        detach_risk_vol_heads=False,
     )
     return p.parse_args()
 
@@ -188,9 +220,26 @@ def composite_score_recovery(metrics: dict[str, float], diagnostics: dict[str, f
     )
 
 
+def composite_score_return_direction_branch(metrics: dict[str, float], diagnostics: dict[str, float]) -> float:
+    """架构师-008 score_0062：优先 cum_return_ic，降低 cum_direction_head 权重。"""
+    dist_h = distribution_health(diagnostics)
+    return (
+        0.22 * max(metrics.get("cum_return_ic", 0.0), -0.05)
+        + 0.20 * metrics["direction_macro_f1"]
+        + 0.15 * metrics.get("cum_direction_from_return_acc", 0.0)
+        + 0.14 * max(metrics["return_ic"], -0.05)
+        + 0.12 * metrics["risk_f1"]
+        - 0.05 * metrics["volatility_mae"]
+        + 0.07 * dist_h
+        + 0.05 * metrics.get("cum_direction_head_acc", 0.0)
+    )
+
+
 def composite_score(metrics: dict[str, float], diagnostics: dict[str, float] | None = None, *, stage: str = "usable") -> float:
     if diagnostics is None:
         diagnostics = {}
+    if stage == "return_direction_branch":
+        return composite_score_return_direction_branch(metrics, diagnostics)
     if stage == "cum_return_recovery":
         return composite_score_recovery(metrics, diagnostics)
     if stage == "balanced_mature":
@@ -222,6 +271,46 @@ RECOVERY_GATES = {
     "risk_f1>=0.53": ("risk_f1", lambda v: v >= 0.53),
 }
 
+BRANCH_GATES = {
+    "cum_return_ic>=0.08": ("cum_return_ic", lambda v: v >= 0.08),
+    "return_ic>=0.035": ("return_ic", lambda v: v >= 0.035),
+    "direction_macro_f1>=0.32": ("direction_macro_f1", lambda v: v >= 0.32),
+    "risk_f1>=0.50": ("risk_f1", lambda v: v >= 0.50),
+    "volatility_mae<=0.070": ("volatility_mae", lambda v: v <= 0.070),
+    "cum_direction_from_return_acc>=54%": ("cum_direction_from_return_acc", lambda v: v >= 0.54),
+}
+
+
+def collapse_gates(diagnostics: dict[str, float]) -> dict[str, bool]:
+    """架构师-008 分类坍缩硬门槛（valid 选模 + 报告）。"""
+    risk_true = diagnostics.get("risk_positive_rate_true", 0.0)
+    risk_pred = diagnostics.get("risk_positive_rate_pred", 0.0)
+    risk_ratio = risk_pred / max(risk_true, 1e-6) if risk_true > 0 else 999.0
+    down_pred = diagnostics.get("direction_pred_c0", 0.0)
+    flat_pred = diagnostics.get("direction_pred_c1", 0.0)
+    up_pred = diagnostics.get("direction_pred_c2", 0.0)
+    return {
+        "direction_pred_down<=60%": down_pred <= 0.60,
+        "direction_pred_flat>=8%": flat_pred >= 0.08,
+        "direction_pred_up>=10%": up_pred >= 0.10,
+        "risk_positive_rate_pred>=5%": risk_pred >= 0.05,
+        "risk_ratio<=1.8": risk_ratio <= 1.8,
+    }
+
+
+def collapse_auto_reject(test: dict[str, float], diagnostics: dict[str, float]) -> list[str]:
+    """架构师-008 测试集坍缩自动 reject。"""
+    reasons: list[str] = []
+    if diagnostics.get("direction_pred_c1", -1.0) == 0.0:
+        reasons.append("direction_pred_flat==0")
+    if diagnostics.get("risk_positive_rate_pred", -1.0) == 0.0:
+        reasons.append("risk_positive_rate_pred==0")
+    if test.get("direction_macro_f1", 1.0) < 0.25:
+        reasons.append("direction_macro_f1<0.25")
+    if test.get("cum_direction_head_acc", 1.0) < 0.45:
+        reasons.append("cum_direction_head_acc<45%")
+    return reasons
+
 
 def _in_range(v: float, lo: float, hi: float) -> bool:
     return lo <= v <= hi
@@ -234,6 +323,13 @@ def distribution_gates(diagnostics: dict[str, float], *, stage: str = "balanced_
     down_pred = diagnostics.get("direction_pred_c0", 0.0)
     flat_pred = diagnostics.get("direction_pred_c1", 0.0)
     up_pred = diagnostics.get("direction_pred_c2", 0.0)
+    if stage == "return_direction_branch":
+        return {
+            "risk_ratio_in_[0.5,1.8]": _in_range(risk_ratio, 0.5, 1.8),
+            "direction_pred_down_in_[25%,55%]": _in_range(down_pred, 0.25, 0.55),
+            "direction_pred_flat_in_[10%,45%]": _in_range(flat_pred, 0.10, 0.45),
+            "direction_pred_up_in_[15%,45%]": _in_range(up_pred, 0.15, 0.45),
+        }
     if stage == "cum_return_recovery":
         return {
             "risk_ratio_in_[0.9,1.5]": _in_range(risk_ratio, 0.9, 1.5),
@@ -248,10 +344,36 @@ def distribution_gates(diagnostics: dict[str, float], *, stage: str = "balanced_
     }
 
 
-def valid_hard_gates(metrics: dict[str, float], diagnostics: dict[str, float]) -> tuple[bool, str]:
-    """架构师-005 valid 选模硬门槛。"""
+def valid_hard_gates(metrics: dict[str, float], diagnostics: dict[str, float], *, stage: str) -> tuple[bool, str]:
+    """valid 选模硬门槛。"""
     risk_true = diagnostics.get("risk_positive_rate_true", 0.0)
     risk_pred = diagnostics.get("risk_positive_rate_pred", 0.0)
+    if stage == "return_direction_branch":
+        cum_ret_ic = metrics.get("cum_return_ic", 0.0)
+        ret_ic = metrics.get("return_ic", 0.0)
+        if ret_ic <= 0.02 and not (cum_ret_ic >= 0.04 and ret_ic >= -0.02):
+            return False, "return_ic<=0.02"
+        if cum_ret_ic <= 0.02:
+            return False, "cum_return_ic<=0.02"
+        if metrics.get("direction_macro_f1", 0.0) < 0.30:
+            return False, "macro_f1<0.30"
+        down_pred = diagnostics.get("direction_pred_c0", 0.0)
+        flat_pred = diagnostics.get("direction_pred_c1", 0.0)
+        up_pred = diagnostics.get("direction_pred_c2", 0.0)
+        if down_pred > 0.60:
+            return False, "direction_down_collapse"
+        if flat_pred < 0.08:
+            return False, "direction_flat_collapse"
+        if up_pred < 0.10:
+            return False, "direction_up_collapse"
+        risk_pred = diagnostics.get("risk_positive_rate_pred", 0.0)
+        if risk_pred < 0.05:
+            return False, "risk_pred_collapse"
+        if risk_true > 0:
+            risk_ratio = risk_pred / max(risk_true, 1e-6)
+            if risk_ratio > 1.8:
+                return False, "risk_ratio>1.8"
+        return True, ""
     if risk_true > 0 and risk_pred / risk_true > 1.6:
         return False, "risk_ratio>1.6"
     if metrics["direction_macro_f1"] < 0.33:
@@ -275,8 +397,13 @@ def selection_eligible(
 ) -> tuple[bool, str]:
     if metrics["risk_f1"] < min_risk_f1:
         return False, "risk_f1"
+    if stage == "return_direction_branch":
+        ok, reason = valid_hard_gates(metrics, diagnostics, stage=stage)
+        if not ok:
+            return False, reason
+        return True, ""
     if stage == "cum_return_recovery":
-        ok, reason = valid_hard_gates(metrics, diagnostics)
+        ok, reason = valid_hard_gates(metrics, diagnostics, stage=stage)
         if not ok:
             return False, reason
         return True, ""
@@ -300,6 +427,7 @@ def training_bias_detected(
     neg_return_ic_streak: int,
     low_cum_dir_streak: int,
     stage: str,
+    bias_stop_return_ic: int = 5,
 ) -> str:
     if stage == "cum_return_recovery":
         if neg_return_ic_streak >= 5:
@@ -310,6 +438,18 @@ def training_bias_detected(
         risk_pred = diagnostics.get("risk_positive_rate_pred", 0.0)
         if risk_true > 0 and risk_pred / risk_true > 1.8:
             return "risk_overpredict"
+        return ""
+    if stage == "return_direction_branch":
+        if neg_return_ic_streak >= bias_stop_return_ic and metrics.get("cum_return_ic", 0.0) < 0.03:
+            return "return_ic_negative_streak"
+        if diagnostics.get("risk_positive_rate_pred", 1.0) == 0.0:
+            return "risk_pred_collapsed"
+        if diagnostics.get("direction_pred_c0", 0.0) > 0.75:
+            return "direction_down_collapse"
+        if diagnostics.get("risk_positive_rate_pred", 0.0) > 0.50:
+            return "risk_overpredict"
+        if diagnostics.get("direction_pred_c1", 0.0) > 0.55:
+            return "flat_overpredict"
         return ""
     if neg_return_ic_streak >= 5:
         return "return_ic_negative_streak"
@@ -375,7 +515,14 @@ def acceptance_decision(
     stage: str = "usable",
     vol_cap: float = 0.10,
 ) -> tuple[str, list[str], str]:
-    gate_map = USABLE_GATES if stage == "usable" else (RECOVERY_GATES if stage == "cum_return_recovery" else BALANCED_GATES)
+    if stage == "usable":
+        gate_map = USABLE_GATES
+    elif stage == "cum_return_recovery":
+        gate_map = RECOVERY_GATES
+    elif stage == "return_direction_branch":
+        gate_map = BRANCH_GATES
+    else:
+        gate_map = BALANCED_GATES
     checks = {k: fn(test[key]) for k, (key, fn) in gate_map.items()}
     if stage == "usable":
         checks["volatility_mae<=cap"] = test["volatility_mae"] <= vol_cap
@@ -385,11 +532,24 @@ def acceptance_decision(
         if risk_pred is not None and (risk_pred < 0.05 or risk_pred > 0.95):
             checks["risk_prediction_collapsed"] = False
     reasons = [k for k, ok in checks.items() if not ok]
+    collapse_reasons = collapse_auto_reject(test, diagnostics or {}) if stage == "return_direction_branch" else []
+    reasons.extend(collapse_reasons)
     blocking = reasons[0] if reasons else ""
     if test["return_ic"] <= 0:
         decision = "reject"
     elif "risk_prediction_collapsed" in reasons:
         decision = "reject"
+    elif stage == "return_direction_branch":
+        metric_passed = sum(fn(test[key]) for _, (key, fn) in BRANCH_GATES.items())
+        dist_passed = sum(distribution_gates(diagnostics or {}, stage=stage).values())
+        if collapse_reasons:
+            decision = "reject"
+        elif metric_passed >= 5 and dist_passed >= 3:
+            decision = "accept"
+        elif metric_passed >= 4 and dist_passed >= 2:
+            decision = "conditional"
+        else:
+            decision = "reject"
     elif stage == "cum_return_recovery":
         metric_passed = sum(fn(test[key]) for _, (key, fn) in RECOVERY_GATES.items())
         dist_passed = sum(distribution_gates(diagnostics or {}, stage=stage).values())
@@ -408,7 +568,7 @@ def acceptance_decision(
             decision = "conditional"
         else:
             decision = "reject"
-    elif passed >= 4 and test.get("direction_macro_f1", 0) >= 0.27:
+    elif sum(checks.values()) >= 4 and test.get("direction_macro_f1", 0) >= 0.27:
         decision = "accept"
     else:
         decision = "conditional"
@@ -500,22 +660,32 @@ def write_report_md(
     target_stage: str = "usable",
     total_gates: int = 5,
     baseline_label: str = "baseline",
+    best_selection_mode: str = "hard_gated",
+    no_valid_checkpoint: bool = False,
+    collapse_gate_valid: dict[str, bool] | None = None,
+    collapse_gate_test: dict[str, bool] | None = None,
 ) -> None:
+    valid_summary = best_valid or test_metrics
+    valid_diag_summary = best_valid_diag or test_diagnostics
     stage_label = {
         "usable": "可用",
         "balanced_mature": "稳定可用→成熟过渡",
         "cum_return_recovery": "累计方向+收益排序恢复",
+        "return_direction_branch": "收益/累计方向分支解耦",
     }.get(target_stage, target_stage)
-    score_name = {"usable": "v1", "balanced_mature": "balanced_0059", "cum_return_recovery": "recovery_0060"}.get(
-        target_stage, target_stage
-    )
+    score_name = {
+        "usable": "v1",
+        "balanced_mature": "balanced_0059",
+        "cum_return_recovery": "recovery_0060",
+        "return_direction_branch": "branch_0062",
+    }.get(target_stage, target_stage)
     lines = [
         f"# {run_id} 多任务市场状态模型训练报告",
         "",
         "## 实验依据",
         "",
-        "- `document/架构师-005-0059训练复盘与0060目标指导.md`",
-        "- `document/架构师-004-当前训练进度复盘与目标修正.md`",
+        "- `document/008/架构师-008-0061训练复盘与指导修正.md`",
+        "- `document/007/架构师-007-0061新结构训练目标指导.md`",
         "",
         f"## 目标阶段: **{target_stage}**（{stage_label}）",
         "",
@@ -526,7 +696,15 @@ def write_report_md(
         f"- return/direction/volatility/risk = {args.return_weight}/{args.direction_weight}/"
         f"{args.volatility_weight}/{args.risk_weight}",
         f"- cum_direction_weight={args.cum_direction_weight}",
+        f"- cum_return_weight={args.cum_return_weight}",
+        f"- cum_direction_head_weight={args.cum_direction_head_weight}",
+        f"- return_consistency_weight={args.return_consistency_weight}",
+        f"- use_cum_heads={args.use_cum_heads}, use_horizon_return_head={args.use_horizon_return_head}, "
+        f"detach_risk_vol_heads={args.detach_risk_vol_heads}",
         f"- class_weights={args.use_class_weights}, balanced_class_weights={args.balanced_class_weights}",
+        f"- direction_class_weights={getattr(args, 'use_direction_class_weights', None)}, "
+        f"risk_class_weights={getattr(args, 'use_risk_class_weights', None)}",
+        f"- detach_risk_vol_after_epoch={getattr(args, 'detach_risk_vol_after_epoch', 0)}",
         f"- init_market_checkpoint=`{args.init_market_checkpoint or 'none'}`",
         f"- score={score_name}, epochs={args.epochs}, lr={args.lr}",
         "",
@@ -552,10 +730,14 @@ def write_report_md(
     ]
     metric_rows = [
         ("cum_direction_acc", "{:.1%}"),
+        ("cum_direction_head_acc", "{:.1%}"),
+        ("cum_direction_from_return_acc", "{:.1%}"),
         ("direction_acc", "{:.1%}"),
         ("direction_macro_f1", "{:.3f}"),
         ("return_ic", "{:.3f}"),
+        ("cum_return_ic", "{:.3f}"),
         ("return_mae", "{:.6f}"),
+        ("cum_return_mae", "{:.6f}"),
         ("volatility_mae", "{:.6f}"),
         ("risk_f1", "{:.3f}"),
         ("loss", "{:.4f}"),
@@ -570,12 +752,24 @@ def write_report_md(
             "",
             "## 最佳验证集",
             "",
-            f"- composite_score={composite_score(best_valid or test_metrics, best_valid_diag or test_diagnostics, stage=target_stage):.4f}",
-            f"- cum_direction_acc={best_valid['cum_direction_acc']:.1%}",
-            f"- direction_macro_f1={best_valid['direction_macro_f1']:.3f}",
-            f"- return_ic={best_valid['return_ic']:.3f}",
-            f"- risk_f1={best_valid['risk_f1']:.3f}",
-            f"- volatility_mae={best_valid['volatility_mae']:.6f}",
+            f"- composite_score={composite_score(valid_summary, valid_diag_summary, stage=target_stage):.4f}",
+            f"- cum_direction_acc={valid_summary.get('cum_direction_acc', 0.0):.1%}",
+            f"- cum_direction_head_acc={valid_summary.get('cum_direction_head_acc', 0.0):.1%}",
+            f"- cum_direction_from_return_acc={valid_summary.get('cum_direction_from_return_acc', 0.0):.1%}",
+            f"- direction_macro_f1={valid_summary.get('direction_macro_f1', 0.0):.3f}",
+            f"- return_ic={valid_summary.get('return_ic', 0.0):.3f}",
+            f"- cum_return_ic={valid_summary.get('cum_return_ic', 0.0):.3f}",
+            f"- risk_f1={valid_summary.get('risk_f1', 0.0):.3f}",
+            f"- volatility_mae={valid_summary.get('volatility_mae', 0.0):.6f}",
+            f"- best_selection_mode={best_selection_mode}",
+            f"- no_valid_checkpoint={no_valid_checkpoint}",
+            "",
+            "## 验证集分布（最佳 checkpoint）",
+            "",
+            f"- direction_pred: `{ {k: round(v,3) for k,v in valid_diag_summary.items() if k.startswith('direction_pred_')} }`",
+            f"- risk_positive_rate_true/pred: "
+            f"{valid_diag_summary.get('risk_positive_rate_true', 0):.3f} / "
+            f"{valid_diag_summary.get('risk_positive_rate_pred', 0):.3f}",
             "",
             "## 测试诊断",
             "",
@@ -590,6 +784,11 @@ def write_report_md(
             f"{test_diagnostics.get('direction_recall_c0', 0):.3f} / "
             f"{test_diagnostics.get('direction_recall_c1', 0):.3f} / "
             f"{test_diagnostics.get('direction_recall_c2', 0):.3f}",
+            "",
+            "## 坍缩门槛",
+            "",
+            f"- valid collapse gates: `{collapse_gate_valid or {}}`",
+            f"- test collapse gates: `{collapse_gate_test or {}}`",
             "",
             f"## 验收结论（{stage_label}）",
             "",
@@ -651,6 +850,10 @@ def main() -> int:
             use_market_state_head=True,
             direction_classes=3,
             risk_classes=2,
+            use_cum_heads=args.use_cum_heads,
+            use_horizon_return_head=args.use_horizon_return_head,
+            detach_risk_vol_heads=args.detach_risk_vol_heads,
+            return_direction_hidden_mult=args.return_direction_hidden_mult,
         )
     ).to(device)
 
@@ -686,11 +889,26 @@ def main() -> int:
     print(f"  train direction dist: {class_dist['train']['direction']}")
 
     dir_class_w = risk_class_w = None
-    if args.use_class_weights:
-        dir_class_w, risk_class_w = compute_train_class_weights(
+    use_dir_cw = (
+        args.use_direction_class_weights
+        if args.use_direction_class_weights is not None
+        else args.use_class_weights
+    )
+    use_risk_cw = (
+        args.use_risk_class_weights
+        if args.use_risk_class_weights is not None
+        else args.use_class_weights
+    )
+    if use_dir_cw or use_risk_cw:
+        dir_w, risk_w = compute_train_class_weights(
             train_loader, device, balanced=args.balanced_class_weights
         )
-        print(f"  class weights: dir={dir_class_w.cpu().tolist()} risk={risk_class_w.cpu().tolist()}")
+        dir_class_w = dir_w if use_dir_cw else None
+        risk_class_w = risk_w if use_risk_cw else None
+        print(
+            f"  class weights: dir={dir_class_w.cpu().tolist() if dir_class_w is not None else 'off'} "
+            f"risk={risk_class_w.cpu().tolist() if risk_class_w is not None else 'off'}"
+        )
 
     loss_kw = dict(
         return_weight=args.return_weight,
@@ -698,6 +916,9 @@ def main() -> int:
         volatility_weight=args.volatility_weight,
         risk_weight=args.risk_weight,
         cum_direction_weight=args.cum_direction_weight,
+        cum_return_weight=args.cum_return_weight,
+        cum_direction_head_weight=args.cum_direction_head_weight,
+        return_consistency_weight=args.return_consistency_weight,
         direction_class_weight=dir_class_w,
         risk_class_weight=risk_class_w,
         risk_focal_loss=args.risk_focal_loss,
@@ -715,11 +936,25 @@ def main() -> int:
     neg_ic_streak = 0
     low_cum_dir_streak = 0
     bias_stop_reason = ""
+    last_valid: dict[str, float] = {}
+    last_valid_diag: dict[str, float] = {}
+    best_selection_mode = "hard_gated"
+    no_valid_checkpoint = False
     for ep in range(1, args.epochs + 1):
+        if (
+            args.detach_risk_vol_after_epoch > 0
+            and ep >= args.detach_risk_vol_after_epoch
+            and model.market_state_head is not None
+            and not model.market_state_head.detach_risk_vol_heads
+        ):
+            model.market_state_head.detach_risk_vol_heads = True
+            print(f"  ep {ep:03d}: enabled detach_risk_vol_heads")
         tr = train_market_state_epoch(model, train_loader, opt, sched, device, grad_clip=args.grad_clip, **loss_kw)
         va_raw = evaluate_market_state(model, valid_loader, device, **loss_kw, with_diagnostics=True)
         va = float_metrics(va_raw)
         va_diag = {k: float(v) for k, v in va_raw.items() if isinstance(v, (int, float)) and not k.startswith("_")}
+        last_valid = float_metrics(va)
+        last_valid_diag = va_diag
         row = {"epoch": ep, "train_loss": tr.loss, **va, **{k: v for k, v in va_diag.items() if k.startswith("direction_") or k.startswith("risk_")}}
         history.append(row)
         score = composite_score(va, va_diag, stage=args.target_stage)
@@ -757,13 +992,15 @@ def main() -> int:
             neg_return_ic_streak=neg_ic_streak,
             low_cum_dir_streak=low_cum_dir_streak,
             stage=args.target_stage,
+            bias_stop_return_ic=args.bias_stop_return_ic,
         )
         if ep == 1 or ep % max(1, args.epochs // 6) == 0:
             dist_h = distribution_health(va_diag)
             print(
                 f"  ep {ep:03d} tr={tr.loss:.4f} va={va['loss']:.4f} "
                 f"dir={va['direction_acc']:.1%} macro_f1={va['direction_macro_f1']:.3f} "
-                f"cum={va['cum_direction_acc']:.1%} ic={va['return_ic']:.3f} "
+                f"cum={va['cum_direction_acc']:.1%}/{va.get('cum_direction_head_acc', 0.0):.1%} "
+                f"ic={va['return_ic']:.3f}/{va.get('cum_return_ic', 0.0):.3f} "
                 f"risk_f1={va['risk_f1']:.3f} flat_p={va_diag.get('direction_pred_c1', 0):.1%} "
                 f"score={score:.4f} dist_h={dist_h:.3f}{mark}"
             )
@@ -775,29 +1012,27 @@ def main() -> int:
             break
 
     if not (ckpt_dir / "market_state_best.pt").is_file():
-        fb = ckpt_dir / "market_state_fallback.pt"
-        if fb.is_file():
-            print("  note: using fallback checkpoint (return_ic>0 & macro_f1>=0.33)")
-            import shutil
-            shutil.copy2(fb, ckpt_dir / "market_state_best.pt")
-            if fallback_valid:
-                best_valid = fallback_valid
-                best_valid_diag = fallback_valid_diag
-        else:
-            print("  warning: no eligible checkpoint saved, using last epoch weights")
-            save_checkpoint(ckpt_dir / "market_state_best.pt", {"model": model.state_dict(), "args": vars(args)})
-    elif not best_valid and fallback_valid:
+        no_valid_checkpoint = True
+        save_checkpoint(
+            ckpt_dir / "diagnostic_last.pt",
+            {"model": model.state_dict(), "args": vars(args)},
+        )
+        best_selection_mode = "diagnostic_last"
+        print("  warning: no eligible checkpoint; saved diagnostic_last.pt only (not a candidate model)")
+    else:
+        ck = torch.load(ckpt_dir / "market_state_best.pt", map_location=device, weights_only=False)
+        model.load_state_dict(ck["model"])
+    if no_valid_checkpoint and fallback_valid:
         best_valid = fallback_valid
         best_valid_diag = fallback_valid_diag
-    ck = torch.load(ckpt_dir / "market_state_best.pt", map_location=device, weights_only=False)
-    model.load_state_dict(ck["model"])
     te_raw = evaluate_market_state(model, test_loader, device, **loss_kw, with_diagnostics=True)
     te = float_metrics(te_raw)
     diagnostics = {k: v for k, v in te_raw.items() if k.startswith("_") or k.startswith("direction_") or k.startswith("risk_") or k.startswith("return_ic_h")}
     print(
         f"[TEST] loss={te['loss']:.4f} dir={te['direction_acc']:.1%} "
         f"macro_f1={te['direction_macro_f1']:.3f} cum={te['cum_direction_acc']:.1%} "
-        f"ic={te['return_ic']:.3f} ret_mae={te['return_mae']:.5f} "
+        f"cum_head={te.get('cum_direction_head_acc', 0.0):.1%} "
+        f"ic={te['return_ic']:.3f} cum_ic={te.get('cum_return_ic', 0.0):.3f} ret_mae={te['return_mae']:.5f} "
         f"vol_mae={te['volatility_mae']:.5f} risk_f1={te['risk_f1']:.3f}"
     )
 
@@ -807,8 +1042,17 @@ def main() -> int:
     decision, reject_reasons, blocking_metric = acceptance_decision(
         te, diagnostics, stage=args.target_stage, vol_cap=0.10
     )
+    if no_valid_checkpoint:
+        decision = "reject"
+        if "no_valid_checkpoint" not in reject_reasons:
+            reject_reasons.insert(0, "no_valid_checkpoint")
+        blocking_metric = blocking_metric or "no_valid_checkpoint"
+    collapse_gate_valid = collapse_gates(best_valid_diag or last_valid_diag)
+    collapse_gate_test = collapse_gates(diagnostics)
     if args.target_stage == "cum_return_recovery":
         total_gates = len(RECOVERY_GATES) + len(distribution_gates(diagnostics, stage=args.target_stage))
+    elif args.target_stage == "return_direction_branch":
+        total_gates = len(BRANCH_GATES) + len(distribution_gates(diagnostics, stage=args.target_stage))
     elif args.target_stage == "balanced_mature":
         total_gates = len(BALANCED_GATES) + len(distribution_gates(diagnostics, stage=args.target_stage))
     else:
@@ -832,6 +1076,10 @@ def main() -> int:
         target_stage=args.target_stage,
         total_gates=total_gates,
         baseline_label="0059c balanced",
+        best_selection_mode=best_selection_mode,
+        no_valid_checkpoint=no_valid_checkpoint,
+        collapse_gate_valid=collapse_gate_valid,
+        collapse_gate_test=collapse_gate_test,
     )
 
     payload = {
@@ -849,9 +1097,15 @@ def main() -> int:
         "history": history,
         "best_valid_metrics": best_valid,
         "best_composite_score": (
-            composite_score(best_valid, best_valid_diag, stage=args.target_stage) if best_valid else None
+            composite_score(best_valid or te, best_valid_diag or diagnostics, stage=args.target_stage)
+            if (best_valid or te)
+            else None
         ),
-        "best_distribution_health": distribution_health(best_valid_diag) if best_valid_diag else None,
+        "best_distribution_health": distribution_health(best_valid_diag or diagnostics) if (best_valid_diag or diagnostics) else None,
+        "best_selection_mode": best_selection_mode,
+        "no_valid_checkpoint": no_valid_checkpoint,
+        "collapse_gates_valid": collapse_gate_valid,
+        "collapse_gates_test": collapse_gate_test,
         "test_metrics": te,
         "test_diagnostics": diagnostics,
         "baseline_0059c": baseline,
@@ -877,7 +1131,7 @@ def main() -> int:
                 f"volatility_mae={te['volatility_mae']:.6f}",
                 f"risk_f1={te['risk_f1']:.3f}",
                 f"decision={decision}",
-                f"composite_score={composite_score(best_valid, best_valid_diag, stage=args.target_stage):.4f}",
+                f"composite_score={composite_score(best_valid or te, best_valid_diag or diagnostics, stage=args.target_stage):.4f}",
             ]
         )
         + "\n",

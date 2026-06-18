@@ -31,6 +31,10 @@ class PatternPredictorConfig:
     use_market_state_head: bool = False
     direction_classes: int = 3
     risk_classes: int = 2
+    use_cum_heads: bool = False
+    use_horizon_return_head: bool = False
+    detach_risk_vol_heads: bool = False
+    return_direction_hidden_mult: float = 1.0
 
 
 @dataclass
@@ -40,6 +44,8 @@ class MarketStateOutput:
     volatility_pred: torch.Tensor
     risk_logits: torch.Tensor
     aux: dict[str, torch.Tensor]
+    cum_return_pred: torch.Tensor | None = None
+    cum_direction_logit: torch.Tensor | None = None
 
 
 class SegmentAttentionPool(nn.Module):
@@ -87,20 +93,42 @@ class HorizonAwarePredictionHead(nn.Module):
 class MarketStateHead(nn.Module):
     """Multi-task market-state prediction head."""
 
-    def __init__(self, d_model: int, horizon: int, *, direction_classes: int = 3, risk_classes: int = 2) -> None:
+    def __init__(
+        self,
+        d_model: int,
+        horizon: int,
+        *,
+        n_heads: int,
+        direction_classes: int = 3,
+        risk_classes: int = 2,
+        use_cum_heads: bool = False,
+        use_horizon_return_head: bool = False,
+        detach_risk_vol_heads: bool = False,
+        return_direction_hidden_mult: float = 1.0,
+    ) -> None:
         super().__init__()
         self.horizon = horizon
         self.direction_classes = direction_classes
         self.risk_classes = risk_classes
+        self.use_cum_heads = use_cum_heads
+        self.use_horizon_return_head = use_horizon_return_head
+        self.detach_risk_vol_heads = detach_risk_vol_heads
+        hidden = max(8, int(d_model * return_direction_hidden_mult))
         self.return_head = nn.Sequential(
-            nn.Linear(d_model, d_model),
+            nn.Linear(d_model, hidden),
             nn.GELU(),
-            nn.Linear(d_model, horizon),
+            nn.Linear(hidden, horizon),
         )
-        self.direction_head = nn.Sequential(
-            nn.Linear(d_model, d_model),
-            nn.GELU(),
-            nn.Linear(d_model, horizon * direction_classes),
+        self.horizon_return_head = (
+            HorizonReturnHead(d_model=d_model, n_heads=n_heads, horizon=horizon)
+            if use_horizon_return_head
+            else None
+        )
+        self.direction_state_head = DirectionStateHead(
+            d_model=d_model,
+            horizon=horizon,
+            direction_classes=direction_classes,
+            hidden_mult=return_direction_hidden_mult,
         )
         self.volatility_head = nn.Sequential(
             nn.Linear(d_model, d_model // 2),
@@ -113,13 +141,106 @@ class MarketStateHead(nn.Module):
             nn.Linear(d_model // 2, horizon * risk_classes),
         )
 
-    def forward(self, pooled: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    def forward(
+        self,
+        pooled: torch.Tensor,
+        tokens: torch.Tensor | None = None,
+        seg_mask: torch.Tensor | None = None,
+    ) -> MarketStateOutput:
         b = pooled.size(0)
-        ret = self.return_head(pooled)
-        direction = self.direction_head(pooled).view(b, self.horizon, self.direction_classes)
-        volatility = self.volatility_head(pooled)
-        risk = self.risk_head(pooled).view(b, self.horizon, self.risk_classes)
-        return ret, direction, volatility, risk
+        cum_return_pred: torch.Tensor | None = None
+        if self.horizon_return_head is not None:
+            if tokens is None or seg_mask is None:
+                raise ValueError("tokens/seg_mask required when use_horizon_return_head=True")
+            ret, cum_return_pred = self.horizon_return_head(pooled, tokens, seg_mask)
+        else:
+            ret = self.return_head(pooled)
+            if self.use_cum_heads:
+                cum_return_pred = ret.sum(dim=1)
+        direction, cum_direction_logit = self.direction_state_head(pooled)
+        if not self.use_cum_heads:
+            cum_direction_logit = None
+        risk_vol_pooled = pooled.detach() if self.detach_risk_vol_heads else pooled
+        volatility = self.volatility_head(risk_vol_pooled)
+        risk = self.risk_head(risk_vol_pooled).view(b, self.horizon, self.risk_classes)
+        return MarketStateOutput(
+            return_pred=ret,
+            direction_logits=direction,
+            volatility_pred=volatility,
+            risk_logits=risk,
+            aux={},
+            cum_return_pred=cum_return_pred if self.use_cum_heads else None,
+            cum_direction_logit=cum_direction_logit,
+        )
+
+
+class HorizonReturnHead(nn.Module):
+    """Horizon-aware return head with explicit cumulative return output."""
+
+    def __init__(self, d_model: int, n_heads: int, horizon: int) -> None:
+        super().__init__()
+        self.horizon = horizon
+        self.query = nn.Parameter(torch.randn(1, horizon, d_model) * 0.02)
+        self.cross_attn = nn.MultiheadAttention(d_model, n_heads, batch_first=True)
+        self.norm = nn.LayerNorm(d_model)
+        self.step_out = nn.Sequential(
+            nn.Linear(d_model, d_model),
+            nn.GELU(),
+            nn.Linear(d_model, 1),
+        )
+        self.cum_out = nn.Sequential(
+            nn.Linear(d_model, d_model),
+            nn.GELU(),
+            nn.Linear(d_model, 1),
+        )
+
+    def forward(
+        self,
+        pooled: torch.Tensor,
+        tokens: torch.Tensor,
+        seg_mask: torch.Tensor,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        b = pooled.size(0)
+        q = self.query.expand(b, -1, -1) + pooled.unsqueeze(1)
+        h, _ = self.cross_attn(q, tokens, tokens, key_padding_mask=~seg_mask)
+        h = self.norm(h + q)
+        ret = self.step_out(h).squeeze(-1)
+        cum_ctx = h.mean(dim=1) + pooled
+        cum_ret = self.cum_out(cum_ctx).squeeze(-1)
+        return ret, cum_ret
+
+
+class DirectionStateHead(nn.Module):
+    """Step-wise direction logits + cumulative direction logit."""
+
+    def __init__(
+        self,
+        d_model: int,
+        horizon: int,
+        *,
+        direction_classes: int = 3,
+        hidden_mult: float = 1.0,
+    ) -> None:
+        super().__init__()
+        self.horizon = horizon
+        self.direction_classes = direction_classes
+        hidden = max(8, int(d_model * hidden_mult))
+        self.step_head = nn.Sequential(
+            nn.Linear(d_model, hidden),
+            nn.GELU(),
+            nn.Linear(hidden, horizon * direction_classes),
+        )
+        self.cum_head = nn.Sequential(
+            nn.Linear(d_model, max(4, hidden // 2)),
+            nn.GELU(),
+            nn.Linear(max(4, hidden // 2), 1),
+        )
+
+    def forward(self, pooled: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+        b = pooled.size(0)
+        step = self.step_head(pooled).view(b, self.horizon, self.direction_classes)
+        cum = self.cum_head(pooled).squeeze(-1)
+        return step, cum
 
 
 class KlinePatternPredictor(nn.Module):
@@ -161,8 +282,13 @@ class KlinePatternPredictor(nn.Module):
             MarketStateHead(
                 d,
                 cfg.pred_horizon,
+                n_heads=cfg.trunk.n_heads,
                 direction_classes=cfg.direction_classes,
                 risk_classes=cfg.risk_classes,
+                use_cum_heads=cfg.use_cum_heads,
+                use_horizon_return_head=cfg.use_horizon_return_head,
+                detach_risk_vol_heads=cfg.detach_risk_vol_heads,
+                return_direction_hidden_mult=cfg.return_direction_hidden_mult,
             )
             if cfg.use_market_state_head
             else None
@@ -228,16 +354,12 @@ class KlinePatternPredictor(nn.Module):
             "ctx_num_segments": auto_out.num_segments,
         }
         if self.cfg.use_market_state_head and self.market_state_head is not None:
-            ret, direction, volatility, risk = self.market_state_head(pooled)
+            mso = self.market_state_head(pooled, h, seg_mask)
             if self.out_scale is not None:
-                ret = ret * self.out_scale
-            mso = MarketStateOutput(
-                return_pred=ret,
-                direction_logits=direction,
-                volatility_pred=volatility,
-                risk_logits=risk,
-                aux=aux,
-            )
+                mso.return_pred = mso.return_pred * self.out_scale
+                if mso.cum_return_pred is not None:
+                    mso.cum_return_pred = mso.cum_return_pred * self.out_scale
+            mso.aux = aux
             return mso
 
         n = self.cfg.pred_horizon
