@@ -1,0 +1,47 @@
+{
+  "checkpoint": "checkpoints/0062c_market_state_cum_return_stabilized/market_state_best.pt",
+  "split": "test",
+  "symbol": "BTCUSDT",
+  "interval": "1h",
+  "num_samples": 3,
+  "direction_threshold": 0.0008133891387842596,
+  "risk_vol_threshold": 0.004116219934076071,
+  "rows": [
+    {
+      "anchor_time": "2026-05-03 01:00:00+00:00",
+      "true_direction_icons": "▼ ■ ■ ▲ ■",
+      "pred_direction_icons": "■ ▲ ▲ ▲ ▼",
+      "step_match_icons": "✗ ✗ ✗ ✓ ✗",
+      "true_risk_icons": "◇ ◇ ◇ ◇ ◇",
+      "pred_risk_icons": "◇ ◇ ◇ ◇ ⚠",
+      "true_cum_return": 0.0006264022667892277,
+      "pred_cum_return": 0.4003787338733673,
+      "true_cum_dir_icon": "↑",
+      "pred_cum_dir_icon": "↑"
+    },
+    {
+      "anchor_time": "2026-05-30 17:00:00+00:00",
+      "true_direction_icons": "■ ■ ■ ■ ▼",
+      "pred_direction_icons": "■ ▲ ▲ ▲ ▼",
+      "step_match_icons": "✓ ✗ ✗ ✗ ✓",
+      "true_risk_icons": "◇ ◇ ◇ ◇ ◇",
+      "pred_risk_icons": "◇ ◇ ◇ ◇ ⚠",
+      "true_cum_return": -0.0017885195557028055,
+      "pred_cum_return": 0.2637062072753906,
+      "true_cum_dir_icon": "↓",
+      "pred_cum_dir_icon": "↑"
+    },
+    {
+      "anchor_time": "2026-06-05 09:00:00+00:00",
+      "true_direction_icons": "▼ ▼ ■ ▼ ▲",
+      "pred_direction_icons": "■ ▲ ▼ ▲ ▼",
+      "step_match_icons": "✗ ✗ ✗ ✗ ✗",
+      "true_risk_icons": "⚠ ⚠ ⚠ ⚠ ⚠",
+      "pred_risk_icons": "◇ ◇ ◇ ◇ ⚠",
+      "true_cum_return": -0.03234498202800751,
+      "pred_cum_return": 0.13375870883464813,
+      "true_cum_dir_icon": "↓",
+      "pred_cum_dir_icon": "↑"
+    }
+  ]
+}

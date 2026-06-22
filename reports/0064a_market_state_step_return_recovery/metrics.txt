@@ -1,0 +1,13 @@
+=== Market State Model ===
+source=binance_vision symbol=BTCUSDT interval=1h days=365
+direction_threshold=0.00081339
+risk_vol_threshold=0.00411622
+direction_acc=40.9%
+direction_macro_f1=0.313
+cum_direction_acc=54.1%
+return_ic=0.010
+return_mae=0.011133
+volatility_mae=0.017859
+risk_f1=0.544
+decision=reject
+composite_score=0.3345

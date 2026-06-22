@@ -76,12 +76,22 @@ def market_state_loss(
     cum_return_weight: float = 0.0,
     cum_direction_head_weight: float = 0.0,
     return_consistency_weight: float = 0.0,
+    return_horizon_weights: torch.Tensor | None = None,
     direction_class_weight: torch.Tensor | None = None,
     risk_class_weight: torch.Tensor | None = None,
     risk_focal_loss: bool = False,
     focal_gamma: float = 2.0,
 ) -> tuple[torch.Tensor, dict[str, float]]:
-    ret_loss = F.huber_loss(output.return_pred, target.future_log_ret, delta=0.5)
+    ret_loss = F.huber_loss(output.return_pred, target.future_log_ret, delta=0.5, reduction="none")
+    if return_horizon_weights is not None:
+        w = return_horizon_weights.to(device=ret_loss.device, dtype=ret_loss.dtype)
+        if w.numel() != ret_loss.size(-1):
+            raise ValueError(
+                f"return_horizon_weights length {w.numel()} != pred_horizon {ret_loss.size(-1)}"
+            )
+        ret_loss = (ret_loss * w.view(1, -1)).mean()
+    else:
+        ret_loss = ret_loss.mean()
     dir_loss = F.cross_entropy(
         output.direction_logits.reshape(-1, output.direction_logits.size(-1)),
         target.direction_label.reshape(-1),
@@ -848,6 +858,7 @@ def evaluate_market_state(
     cum_return_weight: float = 0.0,
     cum_direction_head_weight: float = 0.0,
     return_consistency_weight: float = 0.0,
+    return_horizon_weights: torch.Tensor | None = None,
     risk_focal_loss: bool = False,
     focal_gamma: float = 2.0,
     with_diagnostics: bool = False,
@@ -889,6 +900,7 @@ def evaluate_market_state(
             cum_return_weight=cum_return_weight,
             cum_direction_head_weight=cum_direction_head_weight,
             return_consistency_weight=return_consistency_weight,
+            return_horizon_weights=return_horizon_weights,
             direction_class_weight=direction_class_weight,
             risk_class_weight=risk_class_weight,
             risk_focal_loss=risk_focal_loss,
@@ -1001,6 +1013,7 @@ def train_market_state_epoch(
     cum_return_weight: float = 0.0,
     cum_direction_head_weight: float = 0.0,
     return_consistency_weight: float = 0.0,
+    return_horizon_weights: torch.Tensor | None = None,
     risk_focal_loss: bool = False,
     focal_gamma: float = 2.0,
 ) -> TrainStepResult:
@@ -1032,6 +1045,7 @@ def train_market_state_epoch(
             cum_return_weight=cum_return_weight,
             cum_direction_head_weight=cum_direction_head_weight,
             return_consistency_weight=return_consistency_weight,
+            return_horizon_weights=return_horizon_weights,
             direction_class_weight=direction_class_weight,
             risk_class_weight=risk_class_weight,
             risk_focal_loss=risk_focal_loss,

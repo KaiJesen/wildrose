@@ -1,0 +1,14 @@
+{
+  "total_return": 0.0,
+  "benchmark_return": -0.17818899225621998,
+  "excess_return": 0.17818899225621998,
+  "max_drawdown": 0.0,
+  "win_rate": 0.0,
+  "profit_factor": Infinity,
+  "trade_count": 0.0,
+  "avg_bars_held": 0.0,
+  "avg_fee_per_trade": 0.0,
+  "max_margin_loss_ratio_observed": 0.0,
+  "position_limit_violations": 0.0,
+  "risk_rule_violations": 0.0
+}

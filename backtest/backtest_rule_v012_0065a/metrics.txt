@@ -1,0 +1,12 @@
+checkpoint=checkpoints/0065a_multi_seed_s45_market_state_stability/market_state_best.pt
+split=test
+anchors=1305
+strategy_return=0.0000%
+buy_hold_return=-15.7394%
+excess_return=15.7394%
+sharpe=0.000
+max_drawdown=0.0000%
+num_trades=0
+win_rate=0.00%
+profit_factor=inf
+blocked_open_count=0

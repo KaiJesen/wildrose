@@ -61,7 +61,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--encoder-lr-scale", type=float, default=0.05)
     p.add_argument(
         "--target-stage",
-        choices=["usable", "balanced_mature", "cum_return_recovery", "return_direction_branch"],
+        choices=["usable", "balanced_mature", "cum_return_recovery", "return_direction_branch", "step_return_recovery"],
         default="return_direction_branch",
     )
     p.add_argument("--report-dir", default="reports/0062c_market_state_cum_return_stabilized")
@@ -73,6 +73,13 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--cum-return-weight", type=float, default=0.18)
     p.add_argument("--cum-direction-head-weight", type=float, default=0.03)
     p.add_argument("--return-consistency-weight", type=float, default=0.01)
+    p.add_argument(
+        "--return-horizon-weights",
+        type=float,
+        nargs="+",
+        default=None,
+        help="逐步 return Huber 损失逐 horizon 权重（默认全 1.0）",
+    )
     p.add_argument("--use-cum-heads", action="store_true")
     p.add_argument("--use-horizon-return-head", action="store_true")
     p.add_argument("--detach-risk-vol-heads", action="store_true")
@@ -220,6 +227,22 @@ def composite_score_recovery(metrics: dict[str, float], diagnostics: dict[str, f
     )
 
 
+def composite_score_step_return_recovery(metrics: dict[str, float], diagnostics: dict[str, float]) -> float:
+    """架构师-010 score_0064。"""
+    dist_h = distribution_health(diagnostics)
+    clipped_return_ic = max(-1.0, min(1.0, metrics["return_ic"] / 0.04))
+    clipped_cum_return_ic = max(-1.0, min(1.0, metrics.get("cum_return_ic", 0.0) / 0.12))
+    return (
+        0.28 * clipped_return_ic
+        + 0.20 * clipped_cum_return_ic
+        + 0.16 * metrics.get("cum_direction_from_return_acc", 0.0)
+        + 0.14 * metrics["direction_macro_f1"]
+        + 0.10 * metrics["risk_f1"]
+        - 0.05 * metrics["volatility_mae"]
+        + 0.07 * dist_h
+    )
+
+
 def composite_score_return_direction_branch(metrics: dict[str, float], diagnostics: dict[str, float]) -> float:
     """架构师-008 score_0062：优先 cum_return_ic，降低 cum_direction_head 权重。"""
     dist_h = distribution_health(diagnostics)
@@ -238,6 +261,8 @@ def composite_score_return_direction_branch(metrics: dict[str, float], diagnosti
 def composite_score(metrics: dict[str, float], diagnostics: dict[str, float] | None = None, *, stage: str = "usable") -> float:
     if diagnostics is None:
         diagnostics = {}
+    if stage == "step_return_recovery":
+        return composite_score_step_return_recovery(metrics, diagnostics)
     if stage == "return_direction_branch":
         return composite_score_return_direction_branch(metrics, diagnostics)
     if stage == "cum_return_recovery":
@@ -279,6 +304,69 @@ BRANCH_GATES = {
     "volatility_mae<=0.070": ("volatility_mae", lambda v: v <= 0.070),
     "cum_direction_from_return_acc>=54%": ("cum_direction_from_return_acc", lambda v: v >= 0.54),
 }
+
+STEP_RETURN_GATES = {
+    "return_ic>=0.020": ("return_ic", lambda v: v >= 0.020),
+    "cum_return_ic>=0.100": ("cum_return_ic", lambda v: v >= 0.100),
+    "cum_direction_from_return_acc>=58%": ("cum_direction_from_return_acc", lambda v: v >= 0.58),
+    "direction_macro_f1>=0.320": ("direction_macro_f1", lambda v: v >= 0.320),
+    "risk_f1>=0.530": ("risk_f1", lambda v: v >= 0.530),
+    "volatility_mae<=0.070": ("volatility_mae", lambda v: v <= 0.070),
+}
+
+ACCEPTANCE_TRACK = {
+    "usable": "A",
+    "balanced_mature": "A-ext",
+    "cum_return_recovery": "A-ext",
+    "return_direction_branch": "B",
+    "step_return_recovery": "B",
+}
+
+ACCEPTANCE_TRACK_LABEL = {
+    "A": "usable 主基线轨",
+    "A-ext": "成熟/恢复过渡轨",
+    "B": "新结构分支轨",
+}
+
+
+def acceptance_track_info(stage: str) -> dict[str, str]:
+    track = ACCEPTANCE_TRACK.get(stage, stage)
+    if stage == "step_return_recovery":
+        doc = "document/010/架构师-010-0064收益指标恢复执行指导.md"
+    elif stage == "return_direction_branch":
+        doc = "document/011/架构师-011-0064训练复盘与下一阶段方向.md"
+    elif track == "B":
+        doc = "document/009/项目经理-009-双轨验收与基线说明.md"
+    elif track == "A":
+        doc = "document/003/架构师-003-理想模型指标目标指导.md"
+    else:
+        doc = "document/004/架构师-004-当前训练进度复盘与目标修正.md"
+    return {
+        "acceptance_track": track,
+        "acceptance_track_label": ACCEPTANCE_TRACK_LABEL.get(track, track),
+        "acceptance_doc": doc,
+    }
+
+
+def branch_metadata(stage: str) -> dict[str, str]:
+    """架构师-011 分支类型与能力边界标注。"""
+    if stage == "return_direction_branch":
+        return {
+            "branch_type": "cum_return_candidate",
+            "known_limitation": "weak_step_return_ic",
+            "branch_status": "recommended_stable_template",
+        }
+    if stage == "step_return_recovery":
+        return {
+            "branch_type": "step_return_recovery_experimental",
+            "known_limitation": "conflicts_with_cum_return_branch",
+            "branch_status": "experimental_not_recommended_by_default",
+        }
+    return {
+        "branch_type": "usable_or_transition",
+        "known_limitation": "",
+        "branch_status": "standard",
+    }
 
 
 def collapse_gates(diagnostics: dict[str, float]) -> dict[str, bool]:
@@ -323,7 +411,7 @@ def distribution_gates(diagnostics: dict[str, float], *, stage: str = "balanced_
     down_pred = diagnostics.get("direction_pred_c0", 0.0)
     flat_pred = diagnostics.get("direction_pred_c1", 0.0)
     up_pred = diagnostics.get("direction_pred_c2", 0.0)
-    if stage == "return_direction_branch":
+    if stage in ("return_direction_branch", "step_return_recovery"):
         return {
             "risk_ratio_in_[0.5,1.8]": _in_range(risk_ratio, 0.5, 1.8),
             "direction_pred_down_in_[25%,55%]": _in_range(down_pred, 0.25, 0.55),
@@ -344,10 +432,39 @@ def distribution_gates(diagnostics: dict[str, float], *, stage: str = "balanced_
     }
 
 
+def step_return_auto_reject(test: dict[str, float], diagnostics: dict[str, float]) -> list[str]:
+    """架构师-010 0064 自动 reject。"""
+    reasons: list[str] = []
+    if test.get("return_ic", 1.0) < 0.015:
+        reasons.append("return_ic<0.015")
+    if test.get("cum_return_ic", 1.0) < 0.090:
+        reasons.append("cum_return_ic<0.090")
+    if test.get("cum_direction_from_return_acc", 1.0) < 0.56:
+        reasons.append("cum_direction_from_return_acc<56%")
+    if not all(collapse_gates(diagnostics).values()):
+        reasons.append("collapse_gates_failed")
+    reasons.extend(collapse_auto_reject(test, diagnostics))
+    return list(dict.fromkeys(reasons))
+
+
 def valid_hard_gates(metrics: dict[str, float], diagnostics: dict[str, float], *, stage: str) -> tuple[bool, str]:
     """valid 选模硬门槛。"""
     risk_true = diagnostics.get("risk_positive_rate_true", 0.0)
     risk_pred = diagnostics.get("risk_positive_rate_pred", 0.0)
+    if stage == "step_return_recovery":
+        if metrics.get("return_ic", 0.0) <= 0.015:
+            return False, "return_ic<=0.015"
+        if metrics.get("cum_return_ic", 0.0) < 0.09:
+            return False, "cum_return_ic<0.09"
+        if metrics.get("cum_direction_from_return_acc", 0.0) < 0.56:
+            return False, "cum_dir_from_ret<56%"
+        if metrics.get("direction_macro_f1", 0.0) < 0.31:
+            return False, "macro_f1<0.31"
+        if metrics.get("risk_f1", 0.0) < 0.50:
+            return False, "risk_f1<0.50"
+        if not all(collapse_gates(diagnostics).values()):
+            return False, "collapse_gates"
+        return True, ""
     if stage == "return_direction_branch":
         cum_ret_ic = metrics.get("cum_return_ic", 0.0)
         ret_ic = metrics.get("return_ic", 0.0)
@@ -397,6 +514,11 @@ def selection_eligible(
 ) -> tuple[bool, str]:
     if metrics["risk_f1"] < min_risk_f1:
         return False, "risk_f1"
+    if stage == "step_return_recovery":
+        ok, reason = valid_hard_gates(metrics, diagnostics, stage=stage)
+        if not ok:
+            return False, reason
+        return True, ""
     if stage == "return_direction_branch":
         ok, reason = valid_hard_gates(metrics, diagnostics, stage=stage)
         if not ok:
@@ -439,7 +561,7 @@ def training_bias_detected(
         if risk_true > 0 and risk_pred / risk_true > 1.8:
             return "risk_overpredict"
         return ""
-    if stage == "return_direction_branch":
+    if stage in ("return_direction_branch", "step_return_recovery"):
         if neg_return_ic_streak >= bias_stop_return_ic and metrics.get("cum_return_ic", 0.0) < 0.03:
             return "return_ic_negative_streak"
         if diagnostics.get("risk_positive_rate_pred", 1.0) == 0.0:
@@ -519,6 +641,8 @@ def acceptance_decision(
         gate_map = USABLE_GATES
     elif stage == "cum_return_recovery":
         gate_map = RECOVERY_GATES
+    elif stage == "step_return_recovery":
+        gate_map = STEP_RETURN_GATES
     elif stage == "return_direction_branch":
         gate_map = BRANCH_GATES
     else:
@@ -532,13 +656,34 @@ def acceptance_decision(
         if risk_pred is not None and (risk_pred < 0.05 or risk_pred > 0.95):
             checks["risk_prediction_collapsed"] = False
     reasons = [k for k, ok in checks.items() if not ok]
-    collapse_reasons = collapse_auto_reject(test, diagnostics or {}) if stage == "return_direction_branch" else []
+    if stage == "step_return_recovery":
+        collapse_reasons = step_return_auto_reject(test, diagnostics or {})
+    elif stage == "return_direction_branch":
+        collapse_reasons = collapse_auto_reject(test, diagnostics or {})
+    else:
+        collapse_reasons = []
     reasons.extend(collapse_reasons)
     blocking = reasons[0] if reasons else ""
-    if test["return_ic"] <= 0:
+    if stage == "step_return_recovery" and collapse_reasons:
+        decision = "reject"
+    elif test["return_ic"] <= 0:
         decision = "reject"
     elif "risk_prediction_collapsed" in reasons:
         decision = "reject"
+    elif stage == "step_return_recovery":
+        metric_passed = sum(fn(test[key]) for _, (key, fn) in STEP_RETURN_GATES.items())
+        dist_passed = sum(distribution_gates(diagnostics or {}, stage=stage).values())
+        collapse_passed = all(collapse_gates(diagnostics or {}).values())
+        if metric_passed >= 6 and dist_passed >= 3 and collapse_passed:
+            decision = "accept"
+        elif (
+            test["return_ic"] >= 0.020
+            and test.get("cum_return_ic", 0.0) >= 0.100
+            and collapse_passed
+        ):
+            decision = "conditional"
+        else:
+            decision = "reject"
     elif stage == "return_direction_branch":
         metric_passed = sum(fn(test[key]) for _, (key, fn) in BRANCH_GATES.items())
         dist_passed = sum(distribution_gates(diagnostics or {}, stage=stage).values())
@@ -664,6 +809,12 @@ def write_report_md(
     no_valid_checkpoint: bool = False,
     collapse_gate_valid: dict[str, bool] | None = None,
     collapse_gate_test: dict[str, bool] | None = None,
+    acceptance_track: str = "A",
+    acceptance_track_label: str = "usable 主基线轨",
+    acceptance_doc: str = "document/003/架构师-003-理想模型指标目标指导.md",
+    branch_type: str = "",
+    known_limitation: str = "",
+    branch_status: str = "",
 ) -> None:
     valid_summary = best_valid or test_metrics
     valid_diag_summary = best_valid_diag or test_diagnostics
@@ -672,20 +823,35 @@ def write_report_md(
         "balanced_mature": "稳定可用→成熟过渡",
         "cum_return_recovery": "累计方向+收益排序恢复",
         "return_direction_branch": "收益/累计方向分支解耦",
+        "step_return_recovery": "step return_ic 恢复（0064）",
     }.get(target_stage, target_stage)
     score_name = {
         "usable": "v1",
         "balanced_mature": "balanced_0059",
         "cum_return_recovery": "recovery_0060",
         "return_direction_branch": "branch_0062",
+        "step_return_recovery": "recovery_0064",
     }.get(target_stage, target_stage)
     lines = [
         f"# {run_id} 多任务市场状态模型训练报告",
         "",
         "## 实验依据",
         "",
+        f"- `{acceptance_doc}`",
+        "- `document/009/项目经理-009-双轨验收与基线说明.md`",
         "- `document/008/架构师-008-0061训练复盘与指导修正.md`",
         "- `document/007/架构师-007-0061新结构训练目标指导.md`",
+        "",
+        "## 验收轨道",
+        "",
+        f"- acceptance_track: **{acceptance_track}**（{acceptance_track_label}）",
+        f"- 轨道说明: `{acceptance_doc}`",
+        "",
+        "## 分支类型",
+        "",
+        f"- branch_type: **{branch_type or 'n/a'}**",
+        f"- known_limitation: `{known_limitation or 'none'}`",
+        f"- branch_status: `{branch_status or 'standard'}`",
         "",
         f"## 目标阶段: **{target_stage}**（{stage_label}）",
         "",
@@ -699,6 +865,7 @@ def write_report_md(
         f"- cum_return_weight={args.cum_return_weight}",
         f"- cum_direction_head_weight={args.cum_direction_head_weight}",
         f"- return_consistency_weight={args.return_consistency_weight}",
+        f"- return_horizon_weights={getattr(args, 'return_horizon_weights', None) or 'uniform(1.0)'}",
         f"- use_cum_heads={args.use_cum_heads}, use_horizon_return_head={args.use_horizon_return_head}, "
         f"detach_risk_vol_heads={args.detach_risk_vol_heads}",
         f"- class_weights={args.use_class_weights}, balanced_class_weights={args.balanced_class_weights}",
@@ -784,6 +951,9 @@ def write_report_md(
             f"{test_diagnostics.get('direction_recall_c0', 0):.3f} / "
             f"{test_diagnostics.get('direction_recall_c1', 0):.3f} / "
             f"{test_diagnostics.get('direction_recall_c2', 0):.3f}",
+            f"- step_cum_return_gap_mae={test_metrics.get('step_cum_return_gap_mae', 0.0):.6f}",
+            f"- return_ic_h1..h5: "
+            + str([round(test_metrics.get(f"return_ic_h{i}", 0.0), 3) for i in range(1, 6)]),
             "",
             "## 坍缩门槛",
             "",
@@ -910,6 +1080,11 @@ def main() -> int:
             f"risk={risk_class_w.cpu().tolist() if risk_class_w is not None else 'off'}"
         )
 
+    horizon_w = None
+    if args.return_horizon_weights:
+        horizon_w = torch.tensor(args.return_horizon_weights, dtype=torch.float32, device=device)
+        print(f"  return_horizon_weights={horizon_w.cpu().tolist()}")
+
     loss_kw = dict(
         return_weight=args.return_weight,
         direction_weight=args.direction_weight,
@@ -919,6 +1094,7 @@ def main() -> int:
         cum_return_weight=args.cum_return_weight,
         cum_direction_head_weight=args.cum_direction_head_weight,
         return_consistency_weight=args.return_consistency_weight,
+        return_horizon_weights=horizon_w,
         direction_class_weight=dir_class_w,
         risk_class_weight=risk_class_w,
         risk_focal_loss=args.risk_focal_loss,
@@ -1049,8 +1225,12 @@ def main() -> int:
         blocking_metric = blocking_metric or "no_valid_checkpoint"
     collapse_gate_valid = collapse_gates(best_valid_diag or last_valid_diag)
     collapse_gate_test = collapse_gates(diagnostics)
+    track_info = acceptance_track_info(args.target_stage)
+    branch_info = branch_metadata(args.target_stage)
     if args.target_stage == "cum_return_recovery":
         total_gates = len(RECOVERY_GATES) + len(distribution_gates(diagnostics, stage=args.target_stage))
+    elif args.target_stage == "step_return_recovery":
+        total_gates = len(STEP_RETURN_GATES) + len(distribution_gates(diagnostics, stage=args.target_stage))
     elif args.target_stage == "return_direction_branch":
         total_gates = len(BRANCH_GATES) + len(distribution_gates(diagnostics, stage=args.target_stage))
     elif args.target_stage == "balanced_mature":
@@ -1080,10 +1260,22 @@ def main() -> int:
         no_valid_checkpoint=no_valid_checkpoint,
         collapse_gate_valid=collapse_gate_valid,
         collapse_gate_test=collapse_gate_test,
+        acceptance_track=track_info["acceptance_track"],
+        acceptance_track_label=track_info["acceptance_track_label"],
+        acceptance_doc=track_info["acceptance_doc"],
+        branch_type=branch_info["branch_type"],
+        known_limitation=branch_info["known_limitation"],
+        branch_status=branch_info["branch_status"],
     )
 
     payload = {
         "target_stage": args.target_stage,
+        "branch_type": branch_info["branch_type"],
+        "known_limitation": branch_info["known_limitation"],
+        "branch_status": branch_info["branch_status"],
+        "acceptance_track": track_info["acceptance_track"],
+        "acceptance_track_label": track_info["acceptance_track_label"],
+        "acceptance_doc": track_info["acceptance_doc"],
         "run_id": run_id,
         "bias_stop_reason": bias_stop_reason,
         "args": vars(args),
@@ -1106,6 +1298,13 @@ def main() -> int:
         "no_valid_checkpoint": no_valid_checkpoint,
         "collapse_gates_valid": collapse_gate_valid,
         "collapse_gates_test": collapse_gate_test,
+        "hard_gates_0064_pass": (
+            all(collapse_gate_test.values())
+            and te.get("return_ic", 0) > 0.015
+            and te.get("cum_return_ic", 0) >= 0.09
+            if args.target_stage == "step_return_recovery"
+            else None
+        ),
         "test_metrics": te,
         "test_diagnostics": diagnostics,
         "baseline_0059c": baseline,

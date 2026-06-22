@@ -1,0 +1,12 @@
+checkpoint=checkpoints/0062e_market_state_return_ic_recovery/market_state_best.pt
+split=test
+anchors=1305
+strategy_return=1.1328%
+buy_hold_return=-15.7394%
+excess_return=16.8723%
+sharpe=0.992
+max_drawdown=-2.2640%
+num_trades=26
+win_rate=57.69%
+profit_factor=2.180
+blocked_open_count=0

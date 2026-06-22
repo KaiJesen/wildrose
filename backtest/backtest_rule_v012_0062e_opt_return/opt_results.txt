@@ -1,0 +1,43 @@
+checkpoint=checkpoints/0062e_market_state_return_ic_recovery/market_state_best.pt
+split=test
+trials=2500
+num_anchors=1305
+min_trades=20
+max_dd_cap=12.00%
+
+[best]
+open_edge_threshold=0.087026
+open_prob_threshold=0.347333
+open_flat_max=0.410364
+risk_ok_threshold=0.592678
+risk_exit_threshold=0.622982
+long_continue_edge_min=-0.061281
+short_continue_edge_max=-0.001491
+reverse_edge_threshold=0.082292
+max_hold_bars=8
+risk_budget=0.002815
+stop_atr_mult=1.608091
+tp1_atr_mult=1.120559
+tp2_atr_mult=1.241205
+trail_atr_mult=0.834427
+strategy_return=0.004734
+buy_hold_return=-0.157394
+excess_return=0.162128
+max_drawdown=-0.003999
+sharpe=2.258048
+num_trades=24.000000
+win_rate=0.625000
+profit_factor=2.841575
+objective=0.686003
+
+[top10]
+01) ret=0.47% mdd=-0.40% sharpe=2.26 trades=24 win=62.5% pf=2.842 obj=0.6860 (edge=0.087, prob=0.347, flat=0.410, risk_ok=0.593, risk_exit=0.623, stop=1.61, tp1=1.12, tp2=1.24, trail=0.83, hold=8, rb=0.0028)
+02) ret=0.46% mdd=-0.57% sharpe=1.36 trades=29 win=55.2% pf=2.405 obj=0.4711 (edge=0.039, prob=0.349, flat=0.507, risk_ok=0.545, risk_exit=0.454, stop=1.73, tp1=1.06, tp2=2.68, trail=0.62, hold=10, rb=0.0045)
+03) ret=0.59% mdd=-1.02% sharpe=1.36 trades=27 win=48.1% pf=2.349 obj=0.4650 (edge=0.072, prob=0.264, flat=0.389, risk_ok=0.441, risk_exit=0.645, stop=1.60, tp1=1.09, tp2=3.32, trail=0.48, hold=7, rb=0.0060)
+04) ret=0.62% mdd=-1.16% sharpe=1.44 trades=29 win=62.1% pf=2.141 obj=0.4637 (edge=0.082, prob=0.347, flat=0.434, risk_ok=0.578, risk_exit=0.511, stop=1.84, tp1=1.45, tp2=2.52, trail=1.28, hold=6, rb=0.0055)
+05) ret=0.64% mdd=-1.43% sharpe=1.21 trades=27 win=48.1% pf=2.188 obj=0.4223 (edge=0.075, prob=0.348, flat=0.394, risk_ok=0.484, risk_exit=0.489, stop=1.98, tp1=1.09, tp2=3.07, trail=1.02, hold=5, rb=0.0080)
+06) ret=1.13% mdd=-2.26% sharpe=0.99 trades=26 win=57.7% pf=2.180 obj=0.3819 (edge=0.083, prob=0.336, flat=0.513, risk_ok=0.412, risk_exit=0.467, stop=0.89, tp1=0.80, tp2=2.64, trail=0.85, hold=8, rb=0.0079)
+07) ret=0.34% mdd=-0.91% sharpe=1.26 trades=34 win=55.9% pf=1.594 obj=0.3805 (edge=0.035, prob=0.300, flat=0.384, risk_ok=0.565, risk_exit=0.564, stop=1.75, tp1=1.57, tp2=2.89, trail=0.40, hold=9, rb=0.0037)
+08) ret=0.45% mdd=-1.11% sharpe=0.99 trades=40 win=57.5% pf=2.031 obj=0.3630 (edge=0.062, prob=0.347, flat=0.421, risk_ok=0.575, risk_exit=0.603, stop=1.06, tp1=1.15, tp2=3.13, trail=0.62, hold=4, rb=0.0036)
+09) ret=0.33% mdd=-0.83% sharpe=0.95 trades=36 win=52.8% pf=2.042 obj=0.3543 (edge=0.061, prob=0.347, flat=0.518, risk_ok=0.586, risk_exit=0.478, stop=1.90, tp1=0.78, tp2=2.76, trail=1.09, hold=5, rb=0.0048)
+10) ret=0.20% mdd=-0.51% sharpe=0.83 trades=25 win=64.0% pf=2.329 obj=0.3533 (edge=0.085, prob=0.279, flat=0.396, risk_ok=0.426, risk_exit=0.531, stop=1.61, tp1=1.18, tp2=1.80, trail=1.45, hold=6, rb=0.0032)

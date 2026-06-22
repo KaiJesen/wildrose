@@ -1,0 +1,78 @@
+{
+  "series": "0063_multi_seed_stability",
+  "config_source": "0062e_market_state_return_ic_recovery",
+  "seeds": [42, 43, 44],
+  "runs": [
+    {
+      "run_id": "0063_multi_seed_s42_market_state_stability",
+      "seed": 42,
+      "decision": "accept",
+      "gates_passed": "9/10",
+      "no_valid_checkpoint": false,
+      "epochs_trained": 17,
+      "test_metrics": {
+        "return_ic": 0.0060,
+        "cum_return_ic": 0.1354,
+        "direction_macro_f1": 0.3312,
+        "risk_f1": 0.5572,
+        "cum_direction_from_return_acc": 0.6014,
+        "volatility_mae": 0.0509
+      },
+      "collapse_gates_test_pass": true,
+      "note": "测试指标与 0062e 完全一致（同 seed=42 可复现）"
+    },
+    {
+      "run_id": "0063_multi_seed_s43_market_state_stability",
+      "seed": 43,
+      "decision": "accept",
+      "gates_passed": "9/10",
+      "no_valid_checkpoint": false,
+      "epochs_trained": 17,
+      "test_metrics": {
+        "return_ic": 0.0053,
+        "cum_return_ic": 0.1328,
+        "direction_macro_f1": 0.3358,
+        "risk_f1": 0.5561,
+        "cum_direction_from_return_acc": 0.6216,
+        "volatility_mae": 0.0450
+      },
+      "collapse_gates_test_pass": true
+    },
+    {
+      "run_id": "0063_multi_seed_s44_market_state_stability",
+      "seed": 44,
+      "decision": "accept",
+      "gates_passed": "9/10",
+      "no_valid_checkpoint": false,
+      "epochs_trained": 19,
+      "test_metrics": {
+        "return_ic": 0.0085,
+        "cum_return_ic": 0.1129,
+        "direction_macro_f1": 0.3234,
+        "risk_f1": 0.5463,
+        "cum_direction_from_return_acc": 0.5946,
+        "volatility_mae": 0.0367
+      },
+      "collapse_gates_test_pass": true
+    }
+  ],
+  "aggregate_seed_42_43_44": {
+    "decision_accept_count": 3,
+    "collapse_gates_pass_count": 3,
+    "cum_return_ic": { "mean": 0.1270, "std": 0.0100, "min": 0.1129, "max": 0.1354 },
+    "direction_macro_f1": { "mean": 0.3301, "std": 0.0051, "min": 0.3234, "max": 0.3358 },
+    "return_ic": { "mean": 0.0066, "std": 0.0014, "min": 0.0053, "max": 0.0085 },
+    "risk_f1": { "mean": 0.5532, "std": 0.0049, "min": 0.5463, "max": 0.5572 },
+    "cum_direction_from_return_acc": { "mean": 0.6059, "std": 0.0115, "min": 0.5946, "max": 0.6216 }
+  },
+  "stability_checklist_trainer": {
+    "all_seeds_decision_accept": true,
+    "all_seeds_collapse_gates_pass": true,
+    "all_seeds_cum_return_ic_gte_0.08": true,
+    "all_seeds_macro_f1_gte_0.32": true,
+    "all_seeds_return_ic_positive": true,
+    "no_valid_checkpoint_in_any_run": false,
+    "cum_return_ic_std_lte_0.02": true,
+    "macro_f1_std_lte_0.02": true
+  }
+}

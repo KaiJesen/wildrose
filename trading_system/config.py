@@ -1,0 +1,177 @@
+from __future__ import annotations
+
+import json
+from dataclasses import dataclass
+from pathlib import Path
+
+
+@dataclass(frozen=True)
+class BaseConfig:
+    max_position_ratio: float = 0.20
+    fixed_leverage: float = 20.0
+    max_add_count: int = 2
+    decision_interval: str = "1h"
+    execute_timing: str = "next_bar_open"
+    max_margin_loss_ratio: float = 1.00
+    catastrophe_margin_loss_buffer: float = 0.90
+
+
+@dataclass(frozen=True)
+class RuleConfig:
+    open_edge_threshold: float = 0.08
+    open_prob_threshold: float = 0.42
+    open_flat_max: float = 0.34
+    risk_open_max: float = 0.38
+    risk_exit_threshold: float = 0.48
+    long_continue_edge_min: float = -0.03
+    short_continue_edge_max: float = 0.03
+    reverse_edge_threshold: float = 0.05
+    max_hold_bars: int = 6
+    continue_fail_limit: int = 2
+    reduce_scale: float = 0.5
+    allow_reverse: bool = True
+    risk_exit_mode: str = "full_close"
+    time_exit_mode: str = "full_close"
+
+
+@dataclass(frozen=True)
+class RiskConfig:
+    stop_atr_mult: float = 1.2
+    tp1_atr_mult: float = 1.0
+    tp2_atr_mult: float = 2.0
+    trail_atr_mult: float = 0.8
+    day_drawdown_stop: float = 0.02
+    week_drawdown_defensive: float = 0.05
+    defensive_size_scale: float = 0.30
+    loss_streak_limit: int = 3
+    cooldown_bars: int = 12
+
+
+@dataclass(frozen=True)
+class SizingConfig:
+    weak_conf_min: float = 0.08
+    medium_conf_min: float = 0.14
+    strong_conf_min: float = 0.20
+    weak_range: tuple[float, float] = (0.05, 0.08)
+    medium_range: tuple[float, float] = (0.08, 0.12)
+    strong_range: tuple[float, float] = (0.12, 0.15)
+    very_strong_range: tuple[float, float] = (0.15, 0.20)
+    reference_atr_ratio: float = 0.015
+
+
+@dataclass(frozen=True)
+class ExecutionConfig:
+    fee_bps: float = 4.0
+    slippage_bps: float = 2.0
+    atr_period: int = 14
+
+
+@dataclass(frozen=True)
+class TrendConfig:
+    enabled: bool = True
+    ema_fast: int = 12
+    ema_slow: int = 36
+    ret_lookback_fast: int = 3
+    ret_lookback_slow: int = 6
+    down_ret_atr_threshold: float = -1.2
+    strong_down_ret_atr_threshold: float = -1.8
+    breakdown_lookback: int = 12
+    min_downtrend_votes: int = 2
+    min_strong_downtrend_votes: int = 3
+
+
+@dataclass(frozen=True)
+class ProtectionConfig:
+    block_long_in_downtrend: bool = True
+    allow_probe_short: bool = False
+    probe_short_position_ratio: float = 0.05
+    probe_short_max_position_ratio: float = 0.08
+    probe_short_risk_max: float = 0.45
+    probe_short_flat_max: float = 0.45
+    probe_short_require_cum_ret_negative: bool = False
+    probe_short_min_edge: float = -0.015
+    probe_short_min_p_down: float = 0.30
+    short_exit_confirm_bars: int = 2
+    short_exit_require_edge_and_cum: bool = True
+    allow_sentinel_short: bool = True
+
+
+@dataclass(frozen=True)
+class TrendHoldConfig:
+    enabled: bool = True
+    normal_max_hold_bars: int = 8
+    short_trend_max_hold_bars: int = 24
+    strong_short_trend_max_hold_bars: int = 36
+    trend_break_confirm_bars: int = 2
+    min_profit_to_extend_atr: float = 0.5
+    allow_extend_only_for_model_short: bool = True
+
+
+@dataclass(frozen=True)
+class SentinelShortConfig:
+    enabled: bool = True
+    sentinel_position_ratio: float = 0.03
+    sentinel_max_position_ratio: float = 0.05
+    sentinel_max_hold_bars: int = 4
+    sentinel_cooldown_bars: int = 12
+    sentinel_risk_max: float = 0.42
+    sentinel_flat_max: float = 0.38
+    sentinel_ret6_atr_threshold: float = -2.0
+
+
+@dataclass(frozen=True)
+class TradingSystemConfig:
+    base: BaseConfig = BaseConfig()
+    rule: RuleConfig = RuleConfig()
+    risk: RiskConfig = RiskConfig()
+    sizing: SizingConfig = SizingConfig()
+    execution: ExecutionConfig = ExecutionConfig()
+    trend: TrendConfig = TrendConfig()
+    protection: ProtectionConfig = ProtectionConfig()
+    trend_hold: TrendHoldConfig = TrendHoldConfig()
+    sentinel_short: SentinelShortConfig = SentinelShortConfig()
+
+
+def _tuple2(v: list[float] | tuple[float, float], default: tuple[float, float]) -> tuple[float, float]:
+    if isinstance(v, (list, tuple)) and len(v) == 2:
+        return float(v[0]), float(v[1])
+    return default
+
+
+def load_config(path: str | Path) -> TradingSystemConfig:
+    payload = json.loads(Path(path).read_text(encoding="utf-8"))
+    base_p = payload.get("base", {})
+    rule_p = payload.get("rule", {})
+    risk_p = payload.get("risk", {})
+    sizing_p = payload.get("sizing", {})
+    exec_p = payload.get("execution", {})
+    trend_p = payload.get("trend", {})
+    protection_p = payload.get("protection", {})
+    trend_hold_p = payload.get("trend_hold", {})
+    sentinel_p = payload.get("sentinel_short", {})
+    return TradingSystemConfig(
+        base=BaseConfig(**{**BaseConfig().__dict__, **base_p}),
+        rule=RuleConfig(**{**RuleConfig().__dict__, **rule_p}),
+        risk=RiskConfig(**{**RiskConfig().__dict__, **risk_p}),
+        sizing=SizingConfig(
+            **{
+                **SizingConfig().__dict__,
+                **{
+                    **sizing_p,
+                    "weak_range": _tuple2(sizing_p.get("weak_range", SizingConfig().weak_range), SizingConfig().weak_range),
+                    "medium_range": _tuple2(sizing_p.get("medium_range", SizingConfig().medium_range), SizingConfig().medium_range),
+                    "strong_range": _tuple2(sizing_p.get("strong_range", SizingConfig().strong_range), SizingConfig().strong_range),
+                    "very_strong_range": _tuple2(
+                        sizing_p.get("very_strong_range", SizingConfig().very_strong_range),
+                        SizingConfig().very_strong_range,
+                    ),
+                },
+            }
+        ),
+        execution=ExecutionConfig(**{**ExecutionConfig().__dict__, **exec_p}),
+        trend=TrendConfig(**{**TrendConfig().__dict__, **trend_p}),
+        protection=ProtectionConfig(**{**ProtectionConfig().__dict__, **protection_p}),
+        trend_hold=TrendHoldConfig(**{**TrendHoldConfig().__dict__, **trend_hold_p}),
+        sentinel_short=SentinelShortConfig(**{**SentinelShortConfig().__dict__, **sentinel_p}),
+    )
+

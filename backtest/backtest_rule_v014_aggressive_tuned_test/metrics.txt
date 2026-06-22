@@ -1,0 +1,12 @@
+total_return=0.042421729080783566
+benchmark_return=-0.17818899225621998
+excess_return=0.22061072133700355
+max_drawdown=-0.04520067397310977
+win_rate=0.7142857142857143
+profit_factor=5.422982862499337
+trade_count=7.0
+avg_bars_held=0.0
+avg_fee_per_trade=0.000819299076284681
+max_margin_loss_ratio_observed=0.15762014366153637
+position_limit_violations=0.0
+risk_rule_violations=0.0

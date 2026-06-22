@@ -1,0 +1,20 @@
+{
+  "total_return": 0.028134283338576038,
+  "benchmark_return": -0.17818899225621998,
+  "excess_return": 0.20632327559479602,
+  "max_drawdown": -0.048672434284456535,
+  "win_rate": 0.35714285714285715,
+  "profit_factor": 1.51051185672776,
+  "trade_count": 28.0,
+  "avg_bars_held": 4.0,
+  "avg_fee_per_trade": 0.00047584093302488326,
+  "max_margin_loss_ratio_observed": 0.3560394613416004,
+  "position_limit_violations": 0.0,
+  "risk_rule_violations": 0.0,
+  "probe_short_count": 24.0,
+  "probe_short_win_rate": 0.2916666666666667,
+  "probe_short_total_return": -0.0413651505973306,
+  "blocked_long_downtrend_count": 4.0,
+  "missed_downtrend_bars": 409.0,
+  "short_coverage_downtrend_ratio": 0.13745019920318724
+}

@@ -77,7 +77,7 @@ def parse_args() -> argparse.Namespace:
         "--checkpoint",
         default="checkpoints/anti_lag_horizon_prediction/stage3_predictor_best_combo.pt",
     )
-    p.add_argument("--output-dir", default="reports/btc_sim_backtest")
+    p.add_argument("--output-dir", default="backtest/btc_sim_backtest")
     p.add_argument("--calibration", choices=("none", "affine", "residual"), default="residual")
     p.add_argument("--calibration-ridge", type=float, default=1e-3)
     p.add_argument("--batch-size", type=int, default=64)

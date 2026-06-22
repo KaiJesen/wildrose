@@ -1,0 +1,54 @@
+{
+  "base": {
+    "max_position_ratio": 0.2,
+    "fixed_leverage": 20.0,
+    "max_add_count": 2,
+    "decision_interval": "1h",
+    "execute_timing": "next_bar_open",
+    "max_margin_loss_ratio": 1.0,
+    "catastrophe_margin_loss_buffer": 0.9
+  },
+  "rule": {
+    "open_edge_threshold": 0.08,
+    "open_prob_threshold": 0.42,
+    "open_flat_max": 0.34,
+    "risk_open_max": 0.38,
+    "risk_exit_threshold": 0.48,
+    "long_continue_edge_min": -0.03,
+    "short_continue_edge_max": 0.03,
+    "reverse_edge_threshold": 0.05,
+    "max_hold_bars": 6,
+    "continue_fail_limit": 2,
+    "reduce_scale": 0.5,
+    "allow_reverse": true,
+    "risk_exit_mode": "full_close",
+    "time_exit_mode": "full_close"
+  },
+  "risk": {
+    "stop_atr_mult": 1.2,
+    "tp1_atr_mult": 1.0,
+    "tp2_atr_mult": 2.0,
+    "trail_atr_mult": 0.8,
+    "day_drawdown_stop": 0.02,
+    "week_drawdown_defensive": 0.05,
+    "defensive_size_scale": 0.3,
+    "loss_streak_limit": 3,
+    "cooldown_bars": 12
+  },
+  "sizing": {
+    "weak_conf_min": 0.08,
+    "medium_conf_min": 0.14,
+    "strong_conf_min": 0.2,
+    "weak_range": [0.05, 0.08],
+    "medium_range": [0.08, 0.12],
+    "strong_range": [0.12, 0.15],
+    "very_strong_range": [0.15, 0.2],
+    "reference_atr_ratio": 0.015
+  },
+  "execution": {
+    "fee_bps": 4.0,
+    "slippage_bps": 2.0,
+    "atr_period": 14
+  }
+}
+

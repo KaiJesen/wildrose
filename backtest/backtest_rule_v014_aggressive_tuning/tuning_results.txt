@@ -1,0 +1,43 @@
+checkpoint=checkpoints/0065a_multi_seed_s45_market_state_stability/market_state_best.pt
+base_config=configs/trading_rule_v014_aggressive.json
+split=valid
+bars=[6109,7417)
+grid_size=576
+min_trades_filter=8
+
+[best]
+open_edge_threshold=0.040000
+open_prob_threshold=0.340000
+open_flat_max=0.400000
+risk_open_max=0.450000
+risk_exit_threshold=0.520000
+total_return=0.006635
+benchmark_return=0.139669
+excess_return=-0.133034
+max_drawdown=-0.094182
+trade_count=11.000000
+win_rate=0.636364
+profit_factor=4.668470
+score=1.959590
+
+[top]
+01) edge=0.040 prob=0.340 flat=0.400 risk_open=0.450 risk_exit=0.520 ret=0.66% mdd=-9.42% trades=11 win=63.6% pf=4.668 score=1.9596
+02) edge=0.040 prob=0.340 flat=0.400 risk_open=0.450 risk_exit=0.550 ret=0.66% mdd=-9.42% trades=11 win=63.6% pf=4.668 score=1.9596
+03) edge=0.040 prob=0.340 flat=0.400 risk_open=0.450 risk_exit=0.580 ret=0.66% mdd=-9.42% trades=11 win=63.6% pf=4.668 score=1.9596
+04) edge=0.040 prob=0.340 flat=0.400 risk_open=0.480 risk_exit=0.520 ret=0.66% mdd=-9.42% trades=11 win=63.6% pf=4.668 score=1.9596
+05) edge=0.040 prob=0.340 flat=0.400 risk_open=0.480 risk_exit=0.550 ret=0.66% mdd=-9.42% trades=11 win=63.6% pf=4.668 score=1.9596
+06) edge=0.040 prob=0.340 flat=0.400 risk_open=0.480 risk_exit=0.580 ret=0.66% mdd=-9.42% trades=11 win=63.6% pf=4.668 score=1.9596
+07) edge=0.040 prob=0.340 flat=0.400 risk_open=0.500 risk_exit=0.520 ret=0.66% mdd=-9.42% trades=11 win=63.6% pf=4.668 score=1.9596
+08) edge=0.040 prob=0.340 flat=0.400 risk_open=0.500 risk_exit=0.550 ret=0.66% mdd=-9.42% trades=11 win=63.6% pf=4.668 score=1.9596
+09) edge=0.040 prob=0.340 flat=0.400 risk_open=0.500 risk_exit=0.580 ret=0.66% mdd=-9.42% trades=11 win=63.6% pf=4.668 score=1.9596
+10) edge=0.040 prob=0.340 flat=0.420 risk_open=0.450 risk_exit=0.520 ret=0.62% mdd=-9.46% trades=11 win=63.6% pf=4.669 score=1.9571
+11) edge=0.040 prob=0.340 flat=0.420 risk_open=0.450 risk_exit=0.550 ret=0.62% mdd=-9.46% trades=11 win=63.6% pf=4.669 score=1.9571
+12) edge=0.040 prob=0.340 flat=0.420 risk_open=0.450 risk_exit=0.580 ret=0.62% mdd=-9.46% trades=11 win=63.6% pf=4.669 score=1.9571
+13) edge=0.040 prob=0.340 flat=0.420 risk_open=0.480 risk_exit=0.520 ret=0.62% mdd=-9.46% trades=11 win=63.6% pf=4.669 score=1.9571
+14) edge=0.040 prob=0.340 flat=0.420 risk_open=0.480 risk_exit=0.550 ret=0.62% mdd=-9.46% trades=11 win=63.6% pf=4.669 score=1.9571
+15) edge=0.040 prob=0.340 flat=0.420 risk_open=0.480 risk_exit=0.580 ret=0.62% mdd=-9.46% trades=11 win=63.6% pf=4.669 score=1.9571
+16) edge=0.040 prob=0.340 flat=0.420 risk_open=0.500 risk_exit=0.520 ret=0.62% mdd=-9.46% trades=11 win=63.6% pf=4.669 score=1.9571
+17) edge=0.040 prob=0.340 flat=0.420 risk_open=0.500 risk_exit=0.550 ret=0.62% mdd=-9.46% trades=11 win=63.6% pf=4.669 score=1.9571
+18) edge=0.040 prob=0.340 flat=0.420 risk_open=0.500 risk_exit=0.580 ret=0.62% mdd=-9.46% trades=11 win=63.6% pf=4.669 score=1.9571
+19) edge=0.040 prob=0.340 flat=0.440 risk_open=0.450 risk_exit=0.520 ret=0.62% mdd=-9.46% trades=11 win=63.6% pf=4.669 score=1.9571
+20) edge=0.040 prob=0.340 flat=0.440 risk_open=0.450 risk_exit=0.550 ret=0.62% mdd=-9.46% trades=11 win=63.6% pf=4.669 score=1.9571
