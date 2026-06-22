@@ -22,6 +22,11 @@ class PortfolioState:
     weekly_defensive_mode: bool = False
     account_circuit_breaker: bool = False
     position: PositionState = field(default_factory=PositionState)
+    crash_regime_active: bool = False
+    crash_regime_id: int = 0
+    crash_short_used_in_regime: bool = False
+    crash_short_cooldown_until: int = -1
+    crash_release_count: int = 0
 
     _last_ts: datetime | None = None
 

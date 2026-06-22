@@ -1,0 +1,16 @@
+{
+  "product": "wildrose-trading-system",
+  "version": "v0.0.0",
+  "release_date": "2026-06-22",
+  "git_commit": "04740631c7a28768042733e3943e1ac9a18e4a19",
+  "git_commit_date": "2026-06-22 18:04:04 +0800",
+  "strategy": "v016 trend-signal tuned2",
+  "model_checkpoint": "checkpoint/market_state_best.pt",
+  "model_source": "0062e_market_state_return_ic_recovery",
+  "config": "config/trading_rule.json",
+  "code_packages": ["trading_system", "transformer_kit", "market_data"],
+  "backtest_reference": {
+    "split": "test",
+    "metrics_file": "metrics/backtest_test_oos.json"
+  }
+}

@@ -93,7 +93,7 @@ class ProtectionConfig:
     probe_short_min_p_down: float = 0.30
     short_exit_confirm_bars: int = 2
     short_exit_require_edge_and_cum: bool = True
-    allow_sentinel_short: bool = True
+    allow_sentinel_short: bool = False
 
 
 @dataclass(frozen=True)
@@ -120,6 +120,68 @@ class SentinelShortConfig:
 
 
 @dataclass(frozen=True)
+class CrashConfig:
+    enabled: bool = True
+    ret6_atr_threshold: float = -3.0
+    ret12_atr_threshold: float = -5.0
+    drawdown_24h_threshold: float = -0.06
+    range_expansion_threshold: float = 1.5
+    lower_low_lookback: int = 24
+    min_crash_votes: int = 2
+    strong_crash_votes: int = 3
+    regime_release_bars: int = 6
+
+
+@dataclass(frozen=True)
+class CrashShortConfig:
+    enabled: bool = True
+    position_ratio: float = 0.04
+    strong_position_ratio: float = 0.06
+    max_position_ratio: float = 0.08
+    risk_max: float = 0.48
+    flat_max: float = 0.42
+    max_hold_bars: int = 18
+    strong_max_hold_bars: int = 30
+    fail_stop_atr: float = 1.2
+    trail_start_atr: float = 2.0
+    trail_back_atr: float = 1.0
+    same_regime_once: bool = True
+
+
+@dataclass(frozen=True)
+class TrendSignalConfig:
+    enabled: bool = True
+    ema_fast: int = 12
+    ema_mid: int = 24
+    ema_slow: int = 72
+    ret_fast: int = 6
+    ret_mid: int = 12
+    ret_slow: int = 24
+    structure_lookback: int = 24
+    persistence_lookback: int = 12
+    confirmed_score: int = 4
+    strong_score: int = 5
+    extreme_score: int = 6
+    invalid_confirm_bars: int = 2
+    acceleration_range_expansion: float = 1.4
+    exhaustion_distance_atr: float = 5.0
+
+
+@dataclass(frozen=True)
+class TrendPositionConfig:
+    upgrade_profit_atr: float = 1.5
+    crash_upgrade_profit_atr: float = 1.5
+    allow_crash_trend_upgrade: bool = False
+    min_trend_age_for_upgrade: int = 0
+    add_profit_atr: float = 2.0
+    max_trend_hold_bars: int = 48
+    strong_trend_hold_bars: int = 72
+    exhaustion_reduce_scale: float = 0.5
+    trail_start_atr: float = 2.0
+    trail_back_atr: float = 1.2
+
+
+@dataclass(frozen=True)
 class TradingSystemConfig:
     base: BaseConfig = BaseConfig()
     rule: RuleConfig = RuleConfig()
@@ -130,6 +192,10 @@ class TradingSystemConfig:
     protection: ProtectionConfig = ProtectionConfig()
     trend_hold: TrendHoldConfig = TrendHoldConfig()
     sentinel_short: SentinelShortConfig = SentinelShortConfig()
+    crash: CrashConfig = CrashConfig()
+    crash_short: CrashShortConfig = CrashShortConfig()
+    trend_signal: TrendSignalConfig = TrendSignalConfig()
+    trend_position: TrendPositionConfig = TrendPositionConfig()
 
 
 def _tuple2(v: list[float] | tuple[float, float], default: tuple[float, float]) -> tuple[float, float]:
@@ -149,6 +215,10 @@ def load_config(path: str | Path) -> TradingSystemConfig:
     protection_p = payload.get("protection", {})
     trend_hold_p = payload.get("trend_hold", {})
     sentinel_p = payload.get("sentinel_short", {})
+    crash_p = payload.get("crash", {})
+    crash_short_p = payload.get("crash_short", {})
+    trend_signal_p = payload.get("trend_signal", {})
+    trend_position_p = payload.get("trend_position", {})
     return TradingSystemConfig(
         base=BaseConfig(**{**BaseConfig().__dict__, **base_p}),
         rule=RuleConfig(**{**RuleConfig().__dict__, **rule_p}),
@@ -173,5 +243,9 @@ def load_config(path: str | Path) -> TradingSystemConfig:
         protection=ProtectionConfig(**{**ProtectionConfig().__dict__, **protection_p}),
         trend_hold=TrendHoldConfig(**{**TrendHoldConfig().__dict__, **trend_hold_p}),
         sentinel_short=SentinelShortConfig(**{**SentinelShortConfig().__dict__, **sentinel_p}),
+        crash=CrashConfig(**{**CrashConfig().__dict__, **crash_p}),
+        crash_short=CrashShortConfig(**{**CrashShortConfig().__dict__, **crash_short_p}),
+        trend_signal=TrendSignalConfig(**{**TrendSignalConfig().__dict__, **trend_signal_p}),
+        trend_position=TrendPositionConfig(**{**TrendPositionConfig().__dict__, **trend_position_p}),
     )
 

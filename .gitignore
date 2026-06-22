@@ -43,6 +43,10 @@ data/cache/
 # 本地训练权重（体积大，不入库）
 checkpoints/
 
+# 生产固化包内的 checkpoint 需要入库
+!prod/**/checkpoint/
+!prod/**/checkpoint/**
+
 # 输出图片（demo 默认保存路径）
 *.png
 *.jpg

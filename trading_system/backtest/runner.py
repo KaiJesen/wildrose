@@ -107,6 +107,28 @@ def run_backtest(
         if d.get("reason_code") in ("CLOSE_MAX_HOLD_BARS", "CLOSE_TREND_MAX_HOLD_BARS") and int(d.get("trend_is_downtrend", 0)) == 1
     )
     close_short_trend_broken_count = sum(1 for d in logger.decisions if d.get("reason_code") == "CLOSE_SHORT_TREND_BROKEN")
+    crash_short_count = sum(1 for d in logger.decisions if d.get("reason_code") == "OPEN_SHORT_CRASH")
+    crash_upgrade_count = sum(1 for d in logger.decisions if d.get("reason_code") == "UPGRADE_CRASH_TO_MODEL_SHORT")
+    same_regime_reentry_count = sum(1 for d in logger.decisions if d.get("reason_code") == "BLOCK_CRASH_ONCE_PER_REGIME")
+    model_blind_crash_count = sum(1 for d in logger.decisions if int(d.get("is_model_blind_crash", 0)) == 1)
+    trend_upgrade_count = sum(
+        1 for d in logger.decisions if d.get("reason_code") in ("UPGRADE_TO_TREND_LONG", "UPGRADE_TO_TREND_SHORT")
+    )
+    trend_trades = [t for t in logger.trades if int(t.get("trend_upgrade_done", 0)) == 1 or str(t.get("hold_mode", "")) == "TREND"]
+    trend_trade_total_return = float(sum(float(t.get("net_pnl", 0.0)) for t in trend_trades))
+    avg_trend_hold_bars = float(np.mean([float(t.get("bars_held", 0.0)) for t in trend_trades])) if trend_trades else 0.0
+    add_trend_continuation_count = sum(1 for d in logger.decisions if d.get("reason_code") == "ADD_TREND_CONTINUATION")
+    reduce_trend_exhaustion_count = sum(1 for d in logger.decisions if d.get("reason_code") == "REDUCE_TREND_EXHAUSTION")
+    close_trend_broken_count = sum(1 for d in logger.decisions if d.get("reason_code") == "CLOSE_TREND_BROKEN")
+    confirmed_up_rows = [d for d in logger.decisions if d.get("trend_direction") == "UP" and int(d.get("trend_is_confirmed", 0)) == 1]
+    confirmed_down_rows = [d for d in logger.decisions if d.get("trend_direction") == "DOWN" and int(d.get("trend_is_confirmed", 0)) == 1]
+    long_capture = sum(1 for d in confirmed_up_rows if d.get("state") == "LONG")
+    short_capture = sum(1 for d in confirmed_down_rows if d.get("state") == "SHORT")
+    missed_confirmed_trend_bars = sum(
+        1
+        for d in logger.decisions
+        if int(d.get("trend_is_confirmed", 0)) == 1 and d.get("state") == "FLAT" and d.get("action") == "HOLD"
+    )
     metrics.update(
         {
             "probe_short_count": float(probe_short_count),
@@ -123,6 +145,20 @@ def run_backtest(
             "avg_model_short_hold_bars": float(avg_model_short_hold_bars),
             "close_max_hold_bars_in_downtrend_count": float(close_max_hold_bars_in_downtrend_count),
             "close_short_trend_broken_count": float(close_short_trend_broken_count),
+            "crash_short_count": float(crash_short_count),
+            "crash_upgrade_count": float(crash_upgrade_count),
+            "same_regime_reentry_count": float(same_regime_reentry_count),
+            "model_blind_crash_count": float(model_blind_crash_count),
+            "trend_upgrade_count": float(trend_upgrade_count),
+            "trend_trade_count": float(len(trend_trades)),
+            "trend_trade_total_return": float(trend_trade_total_return),
+            "avg_trend_hold_bars": float(avg_trend_hold_bars),
+            "close_trend_broken_count": float(close_trend_broken_count),
+            "reduce_trend_exhaustion_count": float(reduce_trend_exhaustion_count),
+            "add_trend_continuation_count": float(add_trend_continuation_count),
+            "short_trend_capture_ratio": float(short_capture / max(1, len(confirmed_down_rows))),
+            "long_trend_capture_ratio": float(long_capture / max(1, len(confirmed_up_rows))),
+            "missed_confirmed_trend_bars": float(missed_confirmed_trend_bars),
         }
     )
     return BacktestResult(metrics=metrics, logger=logger)

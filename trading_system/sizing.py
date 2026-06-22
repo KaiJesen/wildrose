@@ -8,6 +8,7 @@ from trading_system.portfolio import PortfolioState
 from trading_system.rules import TradingAction
 from trading_system.signal import TradingSignal
 from trading_system.trend import TrendContext
+from trading_system.trend_signal import TrendSignal
 
 
 @dataclass
@@ -45,6 +46,7 @@ class PositionSizer:
         signal: TradingSignal,
         portfolio: PortfolioState,
         trend_context: TrendContext | None = None,
+        trend_signal: TrendSignal | None = None,
     ) -> SizedAction:
         side = action.target_side
         cur = portfolio.position.position_ratio
@@ -53,15 +55,26 @@ class PositionSizer:
         if action.action in (ActionType.CLOSE, ActionType.FORCE_CLOSE):
             return SizedAction(action.action, Side.FLAT, action.reason_code, 0.0, 0.0, 0.0)
         if action.action == ActionType.REDUCE:
-            new_ratio = max(0.0, cur * self.cfg.rule.reduce_scale)
+            scale = self.cfg.rule.reduce_scale
+            if action.reason_code == "REDUCE_TREND_EXHAUSTION":
+                scale = self.cfg.trend_position.exhaustion_reduce_scale
+            new_ratio = max(0.0, cur * scale)
         elif action.action == ActionType.ADD:
             base = self._base_ratio_from_conf(signal.conf, signal.p_risk)
             if action.reason_code == "UPGRADE_SENTINEL_TO_MODEL_SHORT":
                 new_ratio = min(self.cfg.base.max_position_ratio, max(cur, base))
+            elif action.reason_code == "UPGRADE_CRASH_TO_MODEL_SHORT":
+                new_ratio = min(self.cfg.base.max_position_ratio, max(cur, base))
+            elif action.reason_code in ("ADD_TREND_CONTINUATION", "UPGRADE_TO_TREND_LONG", "UPGRADE_TO_TREND_SHORT"):
+                new_ratio = min(self.cfg.base.max_position_ratio, cur * 1.3)
             else:
                 new_ratio = min(self.cfg.base.max_position_ratio, cur + base * 0.5)
         else:
-            if action.reason_code == "OPEN_SHORT_SENTINEL":
+            if action.reason_code == "OPEN_SHORT_CRASH":
+                c = self.cfg.crash_short
+                crash_ratio = c.strong_position_ratio if (trend_context and getattr(trend_context, "is_strong_downtrend", False)) else c.position_ratio
+                new_ratio = min(self.cfg.base.max_position_ratio, min(crash_ratio, c.max_position_ratio))
+            elif action.reason_code == "OPEN_SHORT_SENTINEL":
                 s = self.cfg.sentinel_short
                 new_ratio = min(self.cfg.base.max_position_ratio, min(s.sentinel_position_ratio, s.sentinel_max_position_ratio))
             else:

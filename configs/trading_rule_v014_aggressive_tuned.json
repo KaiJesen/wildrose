@@ -64,15 +64,15 @@
   },
   "_tuning_meta": {
     "source": "tune_backtest_trading_system_v014.py",
-    "checkpoint": "checkpoints/0062e_market_state_return_ic_recovery/market_state_best.pt",
+    "checkpoint": "checkpoints/0065a_multi_seed_s45_market_state_stability/market_state_best.pt",
     "tune_split": "valid",
-    "score": 2.1170103669059657,
+    "score": 1.9595900039995726,
     "valid_metrics": {
-      "total_return": 0.027952401146608796,
-      "max_drawdown": -0.09575725599821738,
+      "total_return": 0.00663501930190824,
+      "max_drawdown": -0.0941818222412305,
       "trade_count": 11.0,
       "win_rate": 0.6363636363636364,
-      "profit_factor": 4.840390970788808
+      "profit_factor": 4.668470182860978
     }
   }
 }

@@ -8,6 +8,7 @@ from trading_system.portfolio import PortfolioState
 from trading_system.rules import TradingAction
 from trading_system.signal import TradingSignal
 from trading_system.trend import TrendContext
+from trading_system.trend_signal import TrendStrength, TrendSignal
 
 
 @dataclass
@@ -28,6 +29,7 @@ class RiskManager:
         bar_index: int,
         current_price: float,
         trend_context: TrendContext | None = None,
+        trend_signal: TrendSignal | None = None,
     ) -> RiskEvent:
         if not signal.is_valid:
             return RiskEvent(block_open=True, reason=signal.reason_code or "INVALID_SIGNAL")
@@ -54,10 +56,16 @@ class RiskManager:
                 if margin_loss_ratio >= self.cfg.base.catastrophe_margin_loss_buffer:
                     return RiskEvent(force_close=True, reason="CLOSE_CATASTROPHE_MARGIN_LOSS")
             # Time exit: NORMAL and TREND use different hold limits.
-            if pos.hold_mode == "TREND" and pos.side == Side.SHORT and self.cfg.trend_hold.enabled:
-                trend_max_hold = self.cfg.trend_hold.short_trend_max_hold_bars
-                if trend_context and trend_context.is_strong_downtrend:
-                    trend_max_hold = self.cfg.trend_hold.strong_short_trend_max_hold_bars
+            if pos.hold_mode == "CRASH" and pos.side == Side.SHORT and self.cfg.crash_short.enabled:
+                crash_max = self.cfg.crash_short.max_hold_bars
+                if trend_context and getattr(trend_context, "is_strong_downtrend", False):
+                    crash_max = self.cfg.crash_short.strong_max_hold_bars
+                if pos.bars_held >= crash_max:
+                    return RiskEvent(force_close=True, reason="CLOSE_CRASH_MAX_HOLD_BARS")
+            elif pos.hold_mode == "TREND" and self.cfg.trend_signal.enabled:
+                trend_max_hold = self.cfg.trend_position.max_trend_hold_bars
+                if trend_signal and trend_signal.strength in (TrendStrength.STRONG, TrendStrength.EXTREME):
+                    trend_max_hold = self.cfg.trend_position.strong_trend_hold_bars
                 if pos.bars_held >= trend_max_hold:
                     return RiskEvent(force_close=True, reason="CLOSE_TREND_MAX_HOLD_BARS")
             else:
@@ -86,6 +94,9 @@ class RiskManager:
             if action.reason_code == "OPEN_SHORT_SENTINEL":
                 risk_open_max = self.cfg.sentinel_short.sentinel_risk_max
                 flat_max = self.cfg.sentinel_short.sentinel_flat_max
+            elif action.reason_code == "OPEN_SHORT_CRASH":
+                risk_open_max = self.cfg.crash_short.risk_max
+                flat_max = self.cfg.crash_short.flat_max
             if signal.p_risk > risk_open_max:
                 return TradingAction(ActionType.BLOCK, Side.FLAT, "BLOCK_OPEN_RISK_HIGH", blocked_by="risk")
             if signal.p_flat > flat_max:

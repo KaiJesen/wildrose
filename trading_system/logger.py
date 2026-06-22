@@ -4,11 +4,13 @@ import csv
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
+from trading_system.crash import CrashContext
 from trading_system.execution import FillEvent
 from trading_system.portfolio import PortfolioState
 from trading_system.rules import TradingAction
 from trading_system.signal import TradingSignal
 from trading_system.trend import TrendContext
+from trading_system.trend_signal import TrendSignal
 
 
 @dataclass
@@ -26,9 +28,13 @@ class TradeLogger:
         action: TradingAction,
         portfolio: PortfolioState,
         trend_context: TrendContext | None = None,
+        trend_signal: TrendSignal | None = None,
+        crash_context: CrashContext | None = None,
         blocked_reason: str = "",
     ) -> None:
         tc = trend_context
+        ts = trend_signal
+        cc = crash_context
         self.decisions.append(
             {
                 "ts": signal.ts,
@@ -67,6 +73,28 @@ class TradeLogger:
                 "entry_was_sentinel": int(portfolio.position.entry_was_sentinel),
                 "sentinel_bars": portfolio.position.sentinel_bars,
                 "peak_profit_atr": portfolio.position.peak_profit_atr,
+                "is_crash": int(cc.is_crash) if cc else 0,
+                "is_model_blind_crash": int(cc.is_model_blind_crash) if cc else 0,
+                "crash_score": cc.crash_score if cc else 0.0,
+                "crash_reason_codes": "|".join(cc.reason_codes) if cc else "",
+                "drawdown_24h": cc.drawdown_24h if cc else 0.0,
+                "ret_12_atr": cc.ret_12_atr if cc else 0.0,
+                "range_expansion": cc.range_expansion if cc else 0.0,
+                "entry_was_crash": int(portfolio.position.entry_was_crash),
+                "crash_regime_id": portfolio.position.crash_regime_id,
+                "trend_direction": ts.direction.value if ts else "NONE",
+                "trend_strength": ts.strength.value if ts else "NONE",
+                "trend_phase": ts.phase.value if ts else "NONE",
+                "trend_score_up": ts.score_up if ts else 0.0,
+                "trend_score_down": ts.score_down if ts else 0.0,
+                "trend_confidence": ts.confidence if ts else 0.0,
+                "trend_age": ts.trend_age if ts else 0,
+                "trend_invalid_count": ts.invalid_count if ts else 0,
+                "trend_is_confirmed": int(ts.is_confirmed) if ts else 0,
+                "trend_is_broken": int(ts.is_broken) if ts else 0,
+                "trend_is_accelerating": int(ts.is_accelerating) if ts else 0,
+                "trend_is_exhausted": int(ts.is_exhausted) if ts else 0,
+                "trend_signal_reason_codes": "|".join(ts.reason_codes) if ts else "",
             }
         )
 

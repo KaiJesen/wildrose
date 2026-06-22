@@ -34,6 +34,16 @@ class PositionState:
     entry_was_sentinel: bool = False
     sentinel_bars: int = 0
     peak_profit_atr: float = 0.0
+    entry_was_crash: bool = False
+    crash_bars: int = 0
+    crash_regime_id: int = 0
+    entry_trend_direction: str = "NONE"
+    entry_trend_strength: str = "NONE"
+    trend_upgrade_done: bool = False
+    trend_position_type: str = "NONE"
+    trend_entry_score: float = 0.0
+    trend_peak_score: float = 0.0
+    trend_invalid_count: int = 0
     entry_signal_snapshot: dict = field(default_factory=dict)
 
     @property

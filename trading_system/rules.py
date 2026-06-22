@@ -3,10 +3,12 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from trading_system.config import TradingSystemConfig
+from trading_system.crash import CrashContext
 from trading_system.enums import ActionType, Side
 from trading_system.portfolio import PortfolioState
 from trading_system.signal import TradingSignal
 from trading_system.trend import TrendContext
+from trading_system.trend_signal import TrendDirection, TrendPhase, TrendSignal
 
 
 @dataclass
@@ -47,7 +49,14 @@ class RuleEngine:
             and signal.pred_cum_ret_5 <= 0.0
         )
 
-    def decide(self, signal: TradingSignal, portfolio: PortfolioState, trend_context: TrendContext | None = None) -> TradingAction:
+    def decide(
+        self,
+        signal: TradingSignal,
+        portfolio: PortfolioState,
+        trend_context: TrendContext | None = None,
+        crash_context: CrashContext | None = None,
+        trend_signal: TrendSignal | None = None,
+    ) -> TradingAction:
         pos = portfolio.position
         r = self.cfg.rule
         protection = self.cfg.protection
@@ -63,6 +72,20 @@ class RuleEngine:
                 return TradingAction(ActionType.OPEN_LONG, Side.LONG, "OPEN_LONG_SIGNAL")
             if self._is_standard_short_entry(signal):
                 return TradingAction(ActionType.OPEN_SHORT, Side.SHORT, "OPEN_SHORT_SIGNAL")
+            cc = crash_context
+            if (
+                cc
+                and self.cfg.crash_short.enabled
+                and cc.is_model_blind_crash
+                and signal.p_risk <= self.cfg.crash_short.risk_max
+                and signal.p_flat <= self.cfg.crash_short.flat_max
+            ):
+                return TradingAction(
+                    ActionType.OPEN_SHORT,
+                    Side.SHORT,
+                    "OPEN_SHORT_CRASH",
+                    diagnostics={"is_crash_short": True, "strong_crash": cc.strong_crash},
+                )
             if protection.allow_sentinel_short and self.cfg.sentinel_short.enabled and self._is_sentinel_short_entry(signal, tc):
                 return TradingAction(
                     ActionType.OPEN_SHORT,
@@ -73,6 +96,49 @@ class RuleEngine:
             return TradingAction(ActionType.HOLD, Side.FLAT, "HOLD_NO_ENTRY")
 
         side = pos.side
+        ts = trend_signal
+        if not pos.is_flat and ts is not None:
+            # Upgrade profitable position into trend-hold mode.
+            profit_atr = (
+                (signal.price - pos.entry_price) / max(signal.atr, 1e-12)
+                if side == Side.LONG
+                else (pos.entry_price - signal.price) / max(signal.atr, 1e-12)
+            )
+            upgrade_profit_atr = (
+                self.cfg.trend_position.crash_upgrade_profit_atr
+                if pos.hold_mode == "CRASH" and self.cfg.trend_position.allow_crash_trend_upgrade
+                else self.cfg.trend_position.upgrade_profit_atr
+            )
+            can_upgrade = pos.hold_mode != "TREND"
+            if pos.hold_mode == "CRASH" and not self.cfg.trend_position.allow_crash_trend_upgrade:
+                can_upgrade = False
+            if (
+                can_upgrade
+                and profit_atr >= upgrade_profit_atr
+                and ts.is_confirmed
+                and ts.trend_age >= self.cfg.trend_position.min_trend_age_for_upgrade
+                and ts.phase in (TrendPhase.CONTINUATION, TrendPhase.ACCELERATION)
+                and signal.p_risk < self.cfg.rule.risk_exit_threshold
+            ):
+                if side == Side.LONG and ts.direction == TrendDirection.UP:
+                    return TradingAction(ActionType.HOLD, Side.LONG, "UPGRADE_TO_TREND_LONG")
+                if side == Side.SHORT and ts.direction == TrendDirection.DOWN:
+                    return TradingAction(ActionType.HOLD, Side.SHORT, "UPGRADE_TO_TREND_SHORT")
+            if pos.hold_mode == "TREND":
+                if ts.is_broken or ts.phase == TrendPhase.REVERSAL_RISK:
+                    return TradingAction(ActionType.CLOSE, Side.FLAT, "CLOSE_TREND_BROKEN")
+                score_drop = max(0.0, pos.trend_peak_score - ts.score_abs)
+                if ts.phase == TrendPhase.EXHAUSTION or score_drop >= 2.0:
+                    return TradingAction(ActionType.REDUCE, side, "REDUCE_TREND_EXHAUSTION")
+                if (
+                    ts.phase == TrendPhase.ACCELERATION
+                    and pos.add_count < self.cfg.base.max_add_count
+                    and pos.position_ratio < self.cfg.base.max_position_ratio
+                    and signal.p_risk < self.cfg.rule.risk_open_max
+                    and profit_atr >= self.cfg.trend_position.add_profit_atr
+                ):
+                    return TradingAction(ActionType.ADD, side, "ADD_TREND_CONTINUATION")
+                return TradingAction(ActionType.HOLD, side, "HOLD_TREND_CONTINUATION")
         if side == Side.LONG and tc and tc.is_downtrend:
             if signal.edge <= 0.0 or signal.pred_cum_ret_5 <= 0.0:
                 return TradingAction(ActionType.CLOSE, Side.FLAT, "CLOSE_LONG_DOWNTREND_CONFIRMED")
@@ -84,6 +150,23 @@ class RuleEngine:
                 return TradingAction(ActionType.REVERSE, Side.SHORT, "REVERSE_SIGNAL")
             return TradingAction(ActionType.CLOSE, Side.FLAT, "CLOSE_REVERSE_SIGNAL")
         if side == Side.SHORT:
+            if pos.entry_was_crash and self._is_standard_short_entry(signal):
+                return TradingAction(
+                    ActionType.ADD,
+                    Side.SHORT,
+                    "UPGRADE_CRASH_TO_MODEL_SHORT",
+                    diagnostics={"upgrade_crash": True},
+                )
+            if pos.entry_was_crash and crash_context is not None:
+                fail_by_price = signal.price > pos.entry_price + self.cfg.crash_short.fail_stop_atr * max(signal.atr, 1e-12)
+                fail_by_votes = crash_context.crash_votes < self.cfg.crash.min_crash_votes
+                if fail_by_price or (fail_by_votes and pos.crash_bars >= 2):
+                    return TradingAction(ActionType.CLOSE, Side.FLAT, "CLOSE_CRASH_FAILED")
+                if pos.peak_profit_atr >= self.cfg.crash_short.trail_start_atr:
+                    cur_profit_atr = (pos.entry_price - signal.price) / max(1e-12, signal.atr)
+                    if (pos.peak_profit_atr - cur_profit_atr) >= self.cfg.crash_short.trail_back_atr:
+                        return TradingAction(ActionType.CLOSE, Side.FLAT, "CLOSE_CRASH_TRAIL")
+
             # Sentinel must be upgraded quickly, otherwise exit to avoid probe-like drag.
             if pos.entry_was_sentinel and self._is_standard_short_entry(signal):
                 return TradingAction(
@@ -155,7 +238,10 @@ class RuleEngine:
                 and signal.p_risk <= self.cfg.rule.risk_exit_threshold
                 and (
                     not self.cfg.trend_hold.allow_extend_only_for_model_short
-                    or (pos.entry_signal_snapshot.get("reason_code") in ("OPEN_SHORT_SIGNAL", "UPGRADE_SENTINEL_TO_MODEL_SHORT"))
+                    or (
+                        pos.entry_signal_snapshot.get("reason_code")
+                        in ("OPEN_SHORT_SIGNAL", "UPGRADE_SENTINEL_TO_MODEL_SHORT", "UPGRADE_CRASH_TO_MODEL_SHORT")
+                    )
                 )
             ):
                 pos.hold_mode = "TREND"
