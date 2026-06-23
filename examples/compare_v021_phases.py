@@ -21,6 +21,9 @@ PHASES = [
 ]
 
 KEY_METRICS = [
+    "annualized_return",
+    "benchmark_annualized_return",
+    "excess_annualized_return",
     "trade_count",
     "total_return",
     "max_drawdown",
@@ -143,7 +146,7 @@ def main() -> int:
     if base and obs:
         match = (
             obs.get("trade_count") == base.get("trade_count")
-            and abs(obs.get("total_return", 0) - base.get("total_return", 0)) < 1e-9
+            and abs(obs.get("annualized_return", 0) - base.get("annualized_return", 0)) < 1e-6
         )
         print(f"Phase A regression match v020: {match}")
 

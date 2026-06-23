@@ -78,6 +78,7 @@ def run_backtest(
         max_margin_loss_ratio_observed=engine.max_margin_loss_ratio_observed,
         position_limit_violations=engine.position_limit_violations,
         risk_rule_violations=engine.risk_rule_violations,
+        bar_count=end_idx - start_idx,
     )
     probe_trades = [t for t in logger.trades if int(t.get("entry_was_probe", 0)) == 1]
     sentinel_trades = [t for t in logger.trades if int(t.get("entry_was_sentinel", 0)) == 1]
