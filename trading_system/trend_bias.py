@@ -318,10 +318,13 @@ class TrendBiasBuilder:
             allow_add_long = allow_add_long or bool(seg and seg.should_hold_trend)
             reasons.append("SLOW_UP_BOOST_LONG_SIZE")
 
-        if trend_context and trend_context.is_downtrend and leg_direction != BiasDirection.UP:
-            allow_open_long = False
-            open_bias_long = min(open_bias_long, self.cfg.medium_counter_tighten)
-            reasons.append("LEGACY_DOWNTREND_TIGHTEN_LONG")
+        if trend_context and trend_context.is_downtrend:
+            up_leg = seg and seg.leg_type in (TrendLegType.SLOW_UP_LEG, TrendLegType.FAST_UP_LEG)
+            safe_long_in_downtrend = bool(leg_confirmed_up and up_leg and align_long >= 1)
+            if not safe_long_in_downtrend:
+                allow_open_long = False
+                open_bias_long = min(open_bias_long, self.cfg.medium_counter_tighten)
+                reasons.append("LEGACY_DOWNTREND_TIGHTEN_LONG")
 
         allow_open_long, open_bias_long, size_bias_long, allow_add_long = _apply_hard_block(
             allow_open=allow_open_long,
