@@ -154,7 +154,7 @@ test 段 12 笔慢涨交易中，多笔在 **5 月震荡上行/假突破** 被 `
 
 | 内容 | 路径 |
 |------|------|
-| 设计文档 | `document/019/软件设计师-019-慢速上涨趋势捕捉修正方案.md` |
+| 设计文档 | `document/019_慢速上涨趋势捕捉修正/软件设计师-019-慢速上涨趋势捕捉修正方案.md` |
 | **推荐配置** | `configs/trading_rule_v019_slow_uptrend_tuned_0062e.json` |
 | 实验交易配置 | `configs/trading_rule_v019_slow_uptrend_trade_0062e.json` |
 | 调优网格 | `backtest/019_slow_uptrend_tuning_valid/` |

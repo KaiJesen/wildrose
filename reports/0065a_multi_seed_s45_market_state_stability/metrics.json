@@ -5,7 +5,7 @@
   "branch_status": "recommended_stable_template",
   "acceptance_track": "B",
   "acceptance_track_label": "新结构分支轨",
-  "acceptance_doc": "document/011/架构师-011-0064训练复盘与下一阶段方向.md",
+  "acceptance_doc": "document/011_0065分支固化/架构师-011-0064训练复盘与下一阶段方向.md",
   "run_id": "0065a_multi_seed_s45_market_state_stability",
   "bias_stop_reason": "risk_overpredict",
   "args": {

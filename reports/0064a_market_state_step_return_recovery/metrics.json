@@ -2,7 +2,7 @@
   "target_stage": "step_return_recovery",
   "acceptance_track": "B",
   "acceptance_track_label": "新结构分支轨",
-  "acceptance_doc": "document/010/架构师-010-0064收益指标恢复执行指导.md",
+  "acceptance_doc": "document/010_0064收益指标恢复/架构师-010-0064收益指标恢复执行指导.md",
   "run_id": "0064a_market_state_step_return_recovery",
   "bias_stop_reason": "",
   "args": {

@@ -332,15 +332,15 @@ ACCEPTANCE_TRACK_LABEL = {
 def acceptance_track_info(stage: str) -> dict[str, str]:
     track = ACCEPTANCE_TRACK.get(stage, stage)
     if stage == "step_return_recovery":
-        doc = "document/010/架构师-010-0064收益指标恢复执行指导.md"
+        doc = "document/010_0064收益指标恢复/架构师-010-0064收益指标恢复执行指导.md"
     elif stage == "return_direction_branch":
-        doc = "document/011/架构师-011-0064训练复盘与下一阶段方向.md"
+        doc = "document/011_0065分支固化/架构师-011-0064训练复盘与下一阶段方向.md"
     elif track == "B":
-        doc = "document/009/项目经理-009-双轨验收与基线说明.md"
+        doc = "document/009_新结构分支稳定性验证/项目经理-009-双轨验收与基线说明.md"
     elif track == "A":
-        doc = "document/003/架构师-003-理想模型指标目标指导.md"
+        doc = "document/003_理想模型指标目标/架构师-003-理想模型指标目标指导.md"
     else:
-        doc = "document/004/架构师-004-当前训练进度复盘与目标修正.md"
+        doc = "document/004_训练进度复盘与目标修正/架构师-004-当前训练进度复盘与目标修正.md"
     return {
         "acceptance_track": track,
         "acceptance_track_label": ACCEPTANCE_TRACK_LABEL.get(track, track),
@@ -811,7 +811,7 @@ def write_report_md(
     collapse_gate_test: dict[str, bool] | None = None,
     acceptance_track: str = "A",
     acceptance_track_label: str = "usable 主基线轨",
-    acceptance_doc: str = "document/003/架构师-003-理想模型指标目标指导.md",
+    acceptance_doc: str = "document/003_理想模型指标目标/架构师-003-理想模型指标目标指导.md",
     branch_type: str = "",
     known_limitation: str = "",
     branch_status: str = "",
@@ -838,9 +838,9 @@ def write_report_md(
         "## 实验依据",
         "",
         f"- `{acceptance_doc}`",
-        "- `document/009/项目经理-009-双轨验收与基线说明.md`",
-        "- `document/008/架构师-008-0061训练复盘与指导修正.md`",
-        "- `document/007/架构师-007-0061新结构训练目标指导.md`",
+        "- `document/009_新结构分支稳定性验证/项目经理-009-双轨验收与基线说明.md`",
+        "- `document/008_0062累计收益稳定化/架构师-008-0061训练复盘与指导修正.md`",
+        "- `document/007_0061新结构训练目标/架构师-007-0061新结构训练目标指导.md`",
         "",
         "## 验收轨道",
         "",
