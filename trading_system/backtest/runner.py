@@ -15,6 +15,8 @@ from trading_system.metrics import compute_metrics
 class BacktestResult:
     metrics: dict[str, float]
     logger: TradeLogger
+    strategy_equity: list[float]
+    benchmark_equity: list[float]
 
 
 def run_backtest(
@@ -292,5 +294,5 @@ def run_backtest(
             "trend_add_allowed_count": float(engine.trend_add_allowed_count),
         }
     )
-    return BacktestResult(metrics=metrics, logger=logger)
+    return BacktestResult(metrics=metrics, logger=logger, strategy_equity=eq, benchmark_equity=bh)
 

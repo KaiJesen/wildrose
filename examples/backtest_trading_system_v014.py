@@ -7,6 +7,8 @@ import argparse
 import sys
 from pathlib import Path
 
+import numpy as np
+
 _EX = Path(__file__).resolve().parent
 _ROOT = _EX.parent
 if str(_ROOT) not in sys.path:
@@ -111,6 +113,11 @@ def main() -> int:
         metrics=result.metrics,
         config_path=args.config,
         checkpoint=args.checkpoint if not args.signal_csv else "csv_signal",
+        symbol=args.symbol,
+        split=args.split,
+        df=df,
+        strategy_eq=np.asarray(result.strategy_equity, dtype=np.float64),
+        benchmark_eq=np.asarray(result.benchmark_equity, dtype=np.float64),
     )
     print(f"saved backtest outputs to: {out_dir}")
     return 0

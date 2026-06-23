@@ -20,4 +20,4 @@ all = ["akshare>=1.14", "matplotlib>=3.8", "torch>=2.0", "numpy>=1.24"]
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["market_data*", "transformer_kit*"]
+include = ["market_data*", "transformer_kit*", "trading_system*"]
