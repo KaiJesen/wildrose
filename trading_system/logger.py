@@ -4,6 +4,7 @@ import csv
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
+from trading_system.adapters.best_point_model import BestPointSignal
 from trading_system.crash import CrashContext
 from trading_system.execution import FillEvent
 from trading_system.portfolio import PortfolioState
@@ -30,11 +31,13 @@ class TradeLogger:
         trend_context: TrendContext | None = None,
         trend_signal: TrendSignal | None = None,
         crash_context: CrashContext | None = None,
+        best_point_signal: BestPointSignal | None = None,
         blocked_reason: str = "",
     ) -> None:
         tc = trend_context
         ts = trend_signal
         cc = crash_context
+        bs = best_point_signal
         self.decisions.append(
             {
                 "ts": signal.ts,
@@ -95,6 +98,13 @@ class TradeLogger:
                 "trend_is_accelerating": int(ts.is_accelerating) if ts else 0,
                 "trend_is_exhausted": int(ts.is_exhausted) if ts else 0,
                 "trend_signal_reason_codes": "|".join(ts.reason_codes) if ts else "",
+                "bp_p_long_entry_zone": bs.p_long_entry_zone if bs else 0.0,
+                "bp_p_short_entry_zone": bs.p_short_entry_zone if bs else 0.0,
+                "bp_p_hold_long": bs.p_hold_long if bs else 0.0,
+                "bp_p_hold_short": bs.p_hold_short if bs else 0.0,
+                "bp_p_exit_long": bs.p_exit_long if bs else 0.0,
+                "bp_p_exit_short": bs.p_exit_short if bs else 0.0,
+                "bp_expected_opportunity_roi": bs.expected_opportunity_roi if bs else 0.0,
             }
         )
 

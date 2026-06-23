@@ -99,21 +99,21 @@
     "structure_lookback": 24,
     "persistence_lookback": 12,
     "confirmed_score": 4,
-    "strong_score": 5,
-    "extreme_score": 6,
+    "strong_score": 4,
+    "extreme_score": 5,
     "invalid_confirm_bars": 2,
     "acceleration_range_expansion": 1.4,
     "exhaustion_distance_atr": 5.0
   },
   "trend_position": {
-    "upgrade_profit_atr": 1.5,
-    "crash_upgrade_profit_atr": 1.5,
+    "upgrade_profit_atr": 0.8,
+    "crash_upgrade_profit_atr": 1.2,
     "allow_crash_trend_upgrade": false,
-    "min_trend_age_for_upgrade": 0,
-    "add_profit_atr": 2.0,
+    "min_trend_age_for_upgrade": 1,
+    "add_profit_atr": 1.5,
     "max_trend_hold_bars": 48,
     "strong_trend_hold_bars": 72,
-    "exhaustion_reduce_scale": 0.5,
+    "exhaustion_reduce_scale": 0.3,
     "trail_start_atr": 2.0,
     "trail_back_atr": 1.2
   },
@@ -121,10 +121,22 @@
     "weak_conf_min": 0.08,
     "medium_conf_min": 0.14,
     "strong_conf_min": 0.2,
-    "weak_range": [0.05, 0.08],
-    "medium_range": [0.08, 0.12],
-    "strong_range": [0.12, 0.15],
-    "very_strong_range": [0.15, 0.2],
+    "weak_range": [
+      0.05,
+      0.08
+    ],
+    "medium_range": [
+      0.08,
+      0.12
+    ],
+    "strong_range": [
+      0.12,
+      0.15
+    ],
+    "very_strong_range": [
+      0.15,
+      0.2
+    ],
     "reference_atr_ratio": 0.015
   },
   "execution": {
@@ -133,15 +145,18 @@
     "atr_period": 14
   },
   "_tuning_meta": {
-    "source": "tune_backtest_trading_system_v016.py round2",
-    "checkpoint": "checkpoints/0062e_market_state_return_ic_recovery/market_state_best.pt",
-    "note": "Keep default score thresholds; disable crash-position trend upgrade after round-1 analysis",
-    "test_metrics": {
-      "total_return": 0.09661502512895659,
-      "max_drawdown": -0.005831972102325177,
-      "trade_count": 11.0,
+    "source": "tune_backtest_trading_system_v016.py",
+    "checkpoint": "/home/jack/00_workspace/02_python/checkpoints/0062e_market_state_return_ic_recovery/market_state_best.pt",
+    "tune_split": "valid",
+    "score": 0.47856615916743916,
+    "valid_metrics": {
+      "total_return": 0.08856417861787436,
+      "max_drawdown": -0.012467842439699098,
+      "trade_count": 13.0,
+      "profit_factor": 6.667799880651482,
       "trend_upgrade_count": 0.0,
-      "trend_trade_total_return": 0.0569688042601272
+      "trend_trade_total_return": 0.0,
+      "avg_trend_hold_bars": 0.0
     }
   }
 }

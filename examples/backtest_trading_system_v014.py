@@ -18,6 +18,7 @@ from _train_common import add_data_args, add_feature_args, add_segment_args, add
 from trading_system.backtest.report import write_report
 from trading_system.backtest.runner import run_backtest
 from trading_system.config import load_config
+from trading_system.adapters.best_point_model import BestPointSignalProvider
 from trading_system.adapters.market_state_model import ModelSignalProvider
 from trading_system.adapters.csv_signal import CsvSignalProvider
 
@@ -31,6 +32,8 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--checkpoint", default="checkpoints/0065a_multi_seed_s45_market_state_stability/market_state_best.pt")
     p.add_argument("--config", default="configs/trading_rule_v014_conservative.json")
     p.add_argument("--signal-csv", default="")
+    p.add_argument("--best-point-checkpoint", default="")
+    p.add_argument("--best-point-context-bars", type=int, default=96)
     p.add_argument("--split", choices=["train", "valid", "test"], default="test")
     p.add_argument("--trunk-layers", type=int, default=2)
     p.add_argument("--output-dir", default="backtest/backtest_rule_v014_conservative")
@@ -85,6 +88,15 @@ def main() -> int:
             device=args.device,
         )
 
+    bp_provider = None
+    if args.best_point_checkpoint:
+        bp_provider = BestPointSignalProvider.from_checkpoint(
+            checkpoint=args.best_point_checkpoint,
+            df=df,
+            context_bars=args.best_point_context_bars,
+            device=args.device,
+        )
+
     result = run_backtest(
         df,
         signal_provider=provider,
@@ -92,6 +104,7 @@ def main() -> int:
         end_idx=end_idx,
         cfg=cfg,
         out_dir=out_dir,
+        best_point_provider=bp_provider,
     )
     write_report(
         out_dir,

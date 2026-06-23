@@ -25,6 +25,7 @@ def run_backtest(
     end_idx: int,
     cfg: TradingSystemConfig,
     out_dir,
+    best_point_provider=None,
 ) -> BacktestResult:
     logger = TradeLogger(out_dir=out_dir)
     engine = TradingEngine(cfg, logger)
@@ -50,7 +51,8 @@ def run_backtest(
             atr=float(signal_provider.atr[i + 1]),
         )
         sig = signal_provider.signal_at(i)
-        engine.on_bar_close(sig, cur, nxt)
+        bp_sig = best_point_provider.signal_at(i) if best_point_provider is not None else None
+        engine.on_bar_close(sig, cur, nxt, best_point_signal=bp_sig)
 
     logger.flush()
     eq = [row["equity"] for row in logger.equity_curve]

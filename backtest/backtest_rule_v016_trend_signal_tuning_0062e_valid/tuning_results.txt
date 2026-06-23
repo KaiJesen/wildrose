@@ -1,0 +1,55 @@
+checkpoint=/home/jack/00_workspace/02_python/checkpoints/0062e_market_state_return_ic_recovery/market_state_best.pt
+base_config=configs/trading_rule_v016_trend_signal_0062e.json
+split=valid
+bars=[6109,7417)
+grid_size=512
+
+[best]
+open_edge_threshold=0.040000
+open_prob_threshold=0.340000
+open_flat_max=0.400000
+risk_open_max=0.450000
+risk_exit_threshold=0.520000
+confirmed_score=3
+strong_score=4
+extreme_score=5
+invalid_confirm_bars=2
+upgrade_profit_atr=0.500000
+add_profit_atr=1.500000
+max_trend_hold_bars=48
+strong_trend_hold_bars=72
+trail_start_atr=2.000000
+trail_back_atr=1.200000
+total_return=0.074089
+excess_return=-0.065580
+max_drawdown=-0.018215
+trade_count=13.000000
+profit_factor=6.167672
+trend_upgrade_count=2.000000
+trend_trade_total_return=0.003318
+avg_trend_hold_bars=24.000000
+short_trend_capture_ratio=0.138095
+missed_confirmed_trend_bars=431.000000
+score=0.853853
+
+[top]
+01) ret=7.41% mdd=-1.82% trades=13 upgrades=2 trend_ret=0.33% missed=431 edge=0.040 prob=0.340 confirm=3 strong=4 extreme=5 invalid=2 up_atr=0.50 add_atr=1.50 hold=48/72 score=0.8539
+02) ret=7.41% mdd=-1.82% trades=13 upgrades=2 trend_ret=0.33% missed=431 edge=0.040 prob=0.340 confirm=3 strong=4 extreme=5 invalid=2 up_atr=0.50 add_atr=1.50 hold=48/96 score=0.8539
+03) ret=7.41% mdd=-1.82% trades=13 upgrades=2 trend_ret=0.33% missed=431 edge=0.040 prob=0.340 confirm=3 strong=4 extreme=5 invalid=2 up_atr=0.50 add_atr=1.50 hold=72/72 score=0.8539
+04) ret=7.41% mdd=-1.82% trades=13 upgrades=2 trend_ret=0.33% missed=431 edge=0.040 prob=0.340 confirm=3 strong=4 extreme=5 invalid=2 up_atr=0.50 add_atr=1.50 hold=72/96 score=0.8539
+05) ret=7.41% mdd=-1.82% trades=13 upgrades=2 trend_ret=0.33% missed=431 edge=0.040 prob=0.340 confirm=3 strong=4 extreme=5 invalid=2 up_atr=0.50 add_atr=2.00 hold=48/72 score=0.8539
+06) ret=7.41% mdd=-1.82% trades=13 upgrades=2 trend_ret=0.33% missed=431 edge=0.040 prob=0.340 confirm=3 strong=4 extreme=5 invalid=2 up_atr=0.50 add_atr=2.00 hold=48/96 score=0.8539
+07) ret=7.41% mdd=-1.82% trades=13 upgrades=2 trend_ret=0.33% missed=431 edge=0.040 prob=0.340 confirm=3 strong=4 extreme=5 invalid=2 up_atr=0.50 add_atr=2.00 hold=72/72 score=0.8539
+08) ret=7.41% mdd=-1.82% trades=13 upgrades=2 trend_ret=0.33% missed=431 edge=0.040 prob=0.340 confirm=3 strong=4 extreme=5 invalid=2 up_atr=0.50 add_atr=2.00 hold=72/96 score=0.8539
+09) ret=7.41% mdd=-1.82% trades=13 upgrades=2 trend_ret=0.33% missed=431 edge=0.040 prob=0.340 confirm=3 strong=4 extreme=6 invalid=2 up_atr=0.50 add_atr=1.50 hold=48/72 score=0.8539
+10) ret=7.41% mdd=-1.82% trades=13 upgrades=2 trend_ret=0.33% missed=431 edge=0.040 prob=0.340 confirm=3 strong=4 extreme=6 invalid=2 up_atr=0.50 add_atr=1.50 hold=48/96 score=0.8539
+11) ret=7.41% mdd=-1.82% trades=13 upgrades=2 trend_ret=0.33% missed=431 edge=0.040 prob=0.340 confirm=3 strong=4 extreme=6 invalid=2 up_atr=0.50 add_atr=1.50 hold=72/72 score=0.8539
+12) ret=7.41% mdd=-1.82% trades=13 upgrades=2 trend_ret=0.33% missed=431 edge=0.040 prob=0.340 confirm=3 strong=4 extreme=6 invalid=2 up_atr=0.50 add_atr=1.50 hold=72/96 score=0.8539
+13) ret=7.41% mdd=-1.82% trades=13 upgrades=2 trend_ret=0.33% missed=431 edge=0.040 prob=0.340 confirm=3 strong=4 extreme=6 invalid=2 up_atr=0.50 add_atr=2.00 hold=48/72 score=0.8539
+14) ret=7.41% mdd=-1.82% trades=13 upgrades=2 trend_ret=0.33% missed=431 edge=0.040 prob=0.340 confirm=3 strong=4 extreme=6 invalid=2 up_atr=0.50 add_atr=2.00 hold=48/96 score=0.8539
+15) ret=7.41% mdd=-1.82% trades=13 upgrades=2 trend_ret=0.33% missed=431 edge=0.040 prob=0.340 confirm=3 strong=4 extreme=6 invalid=2 up_atr=0.50 add_atr=2.00 hold=72/72 score=0.8539
+16) ret=7.41% mdd=-1.82% trades=13 upgrades=2 trend_ret=0.33% missed=431 edge=0.040 prob=0.340 confirm=3 strong=4 extreme=6 invalid=2 up_atr=0.50 add_atr=2.00 hold=72/96 score=0.8539
+17) ret=7.41% mdd=-1.82% trades=13 upgrades=2 trend_ret=0.33% missed=431 edge=0.040 prob=0.340 confirm=3 strong=5 extreme=5 invalid=2 up_atr=0.50 add_atr=1.50 hold=48/72 score=0.8539
+18) ret=7.41% mdd=-1.82% trades=13 upgrades=2 trend_ret=0.33% missed=431 edge=0.040 prob=0.340 confirm=3 strong=5 extreme=5 invalid=2 up_atr=0.50 add_atr=1.50 hold=48/96 score=0.8539
+19) ret=7.41% mdd=-1.82% trades=13 upgrades=2 trend_ret=0.33% missed=431 edge=0.040 prob=0.340 confirm=3 strong=5 extreme=5 invalid=2 up_atr=0.50 add_atr=1.50 hold=72/72 score=0.8539
+20) ret=7.41% mdd=-1.82% trades=13 upgrades=2 trend_ret=0.33% missed=431 edge=0.040 prob=0.340 confirm=3 strong=5 extreme=5 invalid=2 up_atr=0.50 add_atr=1.50 hold=72/96 score=0.8539

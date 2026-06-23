@@ -1,0 +1,58 @@
+checkpoint=/home/jack/00_workspace/02_python/checkpoints/0062e_market_state_return_ic_recovery/market_state_best.pt
+base_config=configs/trading_rule_v016_trend_signal_0062e.json
+split=valid
+bars=[6109,7417)
+grid_size=6912
+
+[best]
+open_edge_threshold=0.040000
+open_prob_threshold=0.340000
+open_flat_max=0.400000
+risk_open_max=0.450000
+risk_exit_threshold=0.520000
+confirmed_score=4
+strong_score=4
+extreme_score=5
+invalid_confirm_bars=2
+upgrade_profit_atr=0.800000
+crash_upgrade_profit_atr=1.200000
+min_trend_age_for_upgrade=1
+add_profit_atr=1.500000
+max_trend_hold_bars=48
+strong_trend_hold_bars=72
+exhaustion_reduce_scale=0.300000
+trail_start_atr=2.000000
+trail_back_atr=1.200000
+total_return=0.088564
+excess_return=-0.051105
+max_drawdown=-0.012468
+trade_count=13.000000
+profit_factor=6.667800
+trend_upgrade_count=0.000000
+trend_trade_total_return=0.000000
+avg_trend_hold_bars=0.000000
+short_trend_capture_ratio=0.037383
+missed_confirmed_trend_bars=245.000000
+score=0.478566
+
+[top]
+01) ret=8.86% mdd=-1.25% trades=13 upgrades=0 trend_ret=0.00% missed=245 edge=0.040 prob=0.340 confirm=4 strong=4 extreme=5 invalid=2 up_atr=0.80 crash_up_atr=1.20 age=1 exh=0.30 add_atr=1.50 hold=48/72 score=0.4786
+02) ret=8.86% mdd=-1.25% trades=13 upgrades=0 trend_ret=0.00% missed=245 edge=0.040 prob=0.340 confirm=4 strong=4 extreme=5 invalid=2 up_atr=0.80 crash_up_atr=1.20 age=1 exh=0.50 add_atr=1.50 hold=48/72 score=0.4786
+03) ret=8.86% mdd=-1.25% trades=13 upgrades=0 trend_ret=0.00% missed=245 edge=0.040 prob=0.340 confirm=4 strong=4 extreme=5 invalid=2 up_atr=0.80 crash_up_atr=1.20 age=1 exh=0.30 add_atr=1.50 hold=48/96 score=0.4786
+04) ret=8.86% mdd=-1.25% trades=13 upgrades=0 trend_ret=0.00% missed=245 edge=0.040 prob=0.340 confirm=4 strong=4 extreme=5 invalid=2 up_atr=0.80 crash_up_atr=1.20 age=1 exh=0.50 add_atr=1.50 hold=48/96 score=0.4786
+05) ret=8.86% mdd=-1.25% trades=13 upgrades=0 trend_ret=0.00% missed=245 edge=0.040 prob=0.340 confirm=4 strong=4 extreme=5 invalid=2 up_atr=0.80 crash_up_atr=1.20 age=1 exh=0.30 add_atr=1.50 hold=72/72 score=0.4786
+06) ret=8.86% mdd=-1.25% trades=13 upgrades=0 trend_ret=0.00% missed=245 edge=0.040 prob=0.340 confirm=4 strong=4 extreme=5 invalid=2 up_atr=0.80 crash_up_atr=1.20 age=1 exh=0.50 add_atr=1.50 hold=72/72 score=0.4786
+07) ret=8.86% mdd=-1.25% trades=13 upgrades=0 trend_ret=0.00% missed=245 edge=0.040 prob=0.340 confirm=4 strong=4 extreme=5 invalid=2 up_atr=0.80 crash_up_atr=1.20 age=1 exh=0.30 add_atr=1.50 hold=72/96 score=0.4786
+08) ret=8.86% mdd=-1.25% trades=13 upgrades=0 trend_ret=0.00% missed=245 edge=0.040 prob=0.340 confirm=4 strong=4 extreme=5 invalid=2 up_atr=0.80 crash_up_atr=1.20 age=1 exh=0.50 add_atr=1.50 hold=72/96 score=0.4786
+09) ret=8.86% mdd=-1.25% trades=13 upgrades=0 trend_ret=0.00% missed=245 edge=0.040 prob=0.340 confirm=4 strong=4 extreme=5 invalid=2 up_atr=0.80 crash_up_atr=1.20 age=1 exh=0.30 add_atr=2.00 hold=48/72 score=0.4786
+10) ret=8.86% mdd=-1.25% trades=13 upgrades=0 trend_ret=0.00% missed=245 edge=0.040 prob=0.340 confirm=4 strong=4 extreme=5 invalid=2 up_atr=0.80 crash_up_atr=1.20 age=1 exh=0.50 add_atr=2.00 hold=48/72 score=0.4786
+11) ret=8.86% mdd=-1.25% trades=13 upgrades=0 trend_ret=0.00% missed=245 edge=0.040 prob=0.340 confirm=4 strong=4 extreme=5 invalid=2 up_atr=0.80 crash_up_atr=1.20 age=1 exh=0.30 add_atr=2.00 hold=48/96 score=0.4786
+12) ret=8.86% mdd=-1.25% trades=13 upgrades=0 trend_ret=0.00% missed=245 edge=0.040 prob=0.340 confirm=4 strong=4 extreme=5 invalid=2 up_atr=0.80 crash_up_atr=1.20 age=1 exh=0.50 add_atr=2.00 hold=48/96 score=0.4786
+13) ret=8.86% mdd=-1.25% trades=13 upgrades=0 trend_ret=0.00% missed=245 edge=0.040 prob=0.340 confirm=4 strong=4 extreme=5 invalid=2 up_atr=0.80 crash_up_atr=1.20 age=1 exh=0.30 add_atr=2.00 hold=72/72 score=0.4786
+14) ret=8.86% mdd=-1.25% trades=13 upgrades=0 trend_ret=0.00% missed=245 edge=0.040 prob=0.340 confirm=4 strong=4 extreme=5 invalid=2 up_atr=0.80 crash_up_atr=1.20 age=1 exh=0.50 add_atr=2.00 hold=72/72 score=0.4786
+15) ret=8.86% mdd=-1.25% trades=13 upgrades=0 trend_ret=0.00% missed=245 edge=0.040 prob=0.340 confirm=4 strong=4 extreme=5 invalid=2 up_atr=0.80 crash_up_atr=1.20 age=1 exh=0.30 add_atr=2.00 hold=72/96 score=0.4786
+16) ret=8.86% mdd=-1.25% trades=13 upgrades=0 trend_ret=0.00% missed=245 edge=0.040 prob=0.340 confirm=4 strong=4 extreme=5 invalid=2 up_atr=0.80 crash_up_atr=1.20 age=1 exh=0.50 add_atr=2.00 hold=72/96 score=0.4786
+17) ret=8.86% mdd=-1.25% trades=13 upgrades=0 trend_ret=0.00% missed=245 edge=0.040 prob=0.340 confirm=4 strong=4 extreme=5 invalid=2 up_atr=0.80 crash_up_atr=1.20 age=2 exh=0.30 add_atr=1.50 hold=48/72 score=0.4786
+18) ret=8.86% mdd=-1.25% trades=13 upgrades=0 trend_ret=0.00% missed=245 edge=0.040 prob=0.340 confirm=4 strong=4 extreme=5 invalid=2 up_atr=0.80 crash_up_atr=1.20 age=2 exh=0.50 add_atr=1.50 hold=48/72 score=0.4786
+19) ret=8.86% mdd=-1.25% trades=13 upgrades=0 trend_ret=0.00% missed=245 edge=0.040 prob=0.340 confirm=4 strong=4 extreme=5 invalid=2 up_atr=0.80 crash_up_atr=1.20 age=2 exh=0.30 add_atr=1.50 hold=48/96 score=0.4786
+20) ret=8.86% mdd=-1.25% trades=13 upgrades=0 trend_ret=0.00% missed=245 edge=0.040 prob=0.340 confirm=4 strong=4 extreme=5 invalid=2 up_atr=0.80 crash_up_atr=1.20 age=2 exh=0.50 add_atr=1.50 hold=48/96 score=0.4786

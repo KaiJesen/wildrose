@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from trading_system.adapters.best_point_model import BestPointSignal
 from trading_system.config import TradingSystemConfig
 from trading_system.crash import CrashContext, CrashRegimeDetector
 from trading_system.enums import ActionType, Side
@@ -217,7 +218,14 @@ class TradingEngine:
                     pos.trend_peak_score = max(pos.trend_peak_score, self._last_trend_signal.score_abs)
                     pos.trend_invalid_count = self._last_trend_signal.invalid_count
 
-    def on_bar_close(self, signal: TradingSignal, current_bar: Bar, next_bar: Bar) -> None:
+    def on_bar_close(
+        self,
+        signal: TradingSignal,
+        current_bar: Bar,
+        next_bar: Bar,
+        *,
+        best_point_signal: BestPointSignal | None = None,
+    ) -> None:
         self.close_hist.append(current_bar.close)
         self.high_hist.append(current_bar.high)
         self.low_hist.append(current_bar.low)
@@ -289,6 +297,7 @@ class TradingEngine:
                 trend_context=trend_context,
                 trend_signal=trend_signal,
                 crash_context=crash_context,
+                best_point_signal=best_point_signal,
                 blocked_reason=action.reason_code,
             )
             self.logger.record_equity(current_bar.ts, self.portfolio.equity)
@@ -345,6 +354,7 @@ class TradingEngine:
             trend_context=trend_context,
             trend_signal=trend_signal,
             crash_context=crash_context,
+            best_point_signal=best_point_signal,
             blocked_reason=action.reason_code if action.action == ActionType.BLOCK else "",
         )
         self.logger.record_order(

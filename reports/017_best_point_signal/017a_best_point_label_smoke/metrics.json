@@ -1,0 +1,8 @@
+{
+  "loss": 2.1116890112559,
+  "entry_acc": 0.475,
+  "opportunity_ic": -0.11607359402722069,
+  "best_score": 0.475,
+  "run_name": "017a_best_point_label_smoke",
+  "checkpoint": "checkpoints/017_best_point_signal/017a_best_point_label_smoke/best.pt"
+}
