@@ -212,6 +212,20 @@ def run_backtest(
     block_counter_trend_count = sum(
         1 for d in logger.decisions if d.get("reason_code") in ("BLOCK_COUNTER_TREND_LONG", "BLOCK_COUNTER_TREND_SHORT")
     )
+    bias_rows = logger.decisions
+    bias_field_nonempty = sum(1 for d in bias_rows if d.get("decision_scope"))
+    bias_reason_nonempty = sum(1 for d in bias_rows if d.get("bias_reason_codes"))
+    hard_counter_open_count = float(engine.hard_counter_open_count)
+    legacy_trend_direct_block_count = float(engine.legacy_trend_direct_block_count)
+    open_actions = [
+        d
+        for d in logger.decisions
+        if d.get("action") in ("OPEN_LONG", "OPEN_SHORT") and d.get("reason_code", "").startswith("OPEN_")
+    ]
+    bias_reason_coverage = (
+        sum(1 for d in open_actions if d.get("bias_reason_codes")) / max(1, len(open_actions))
+    )
+    max_position_ratio_observed = float(max((float(d.get("position_ratio", 0.0)) for d in logger.decisions), default=0.0))
     metrics.update(
         {
             "probe_short_count": float(probe_short_count),
@@ -264,6 +278,17 @@ def run_backtest(
             "false_leg_entry_count": float(false_leg_entry_count),
             "close_trend_leg_end_count": float(close_trend_leg_end_count),
             "block_counter_trend_count": float(block_counter_trend_count),
+            "bias_field_nonempty_ratio": float(bias_field_nonempty / max(1, len(bias_rows))),
+            "bias_reason_nonempty_ratio": float(bias_reason_nonempty / max(1, len(bias_rows))),
+            "hard_counter_open_count": hard_counter_open_count,
+            "legacy_trend_direct_block_count": legacy_trend_direct_block_count,
+            "legacy_trend_direct_read_count": float(engine.legacy_trend_direct_read_count),
+            "bias_reason_codes_coverage": float(bias_reason_coverage),
+            "max_position_ratio_observed": max_position_ratio_observed,
+            "trend_add_candidate_count": float(engine.trend_add_candidate_count),
+            "trend_add_risk_evaluated_count": float(engine.trend_add_risk_evaluated_count),
+            "trend_add_rejected_by_risk_count": float(engine.trend_add_rejected_by_risk_count),
+            "trend_add_allowed_count": float(engine.trend_add_allowed_count),
         }
     )
     return BacktestResult(metrics=metrics, logger=logger)

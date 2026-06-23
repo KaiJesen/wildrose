@@ -16,7 +16,8 @@ from trading_system.sizing import PositionSizer
 from trading_system.slow_trend import SlowTrendContext, SlowUptrendDetector
 from trading_system.trend_segment import SegmentContext, TrendSegmentEngine
 from trading_system.trend import TrendContext, TrendRegimeFilter
-from trading_system.trend_signal import TrendDirection, TrendMemory, TrendSignal, TrendSignalProvider
+from trading_system.trend_signal import TrendMemory, TrendSignal, TrendSignalProvider
+from trading_system.trend_bias import CounterTrendLevel, RiskBudget, TrendBiasBuilder, TrendBiasContext, neutral_trend_bias
 
 
 @dataclass
@@ -45,6 +46,7 @@ class TradingEngine:
         self.crash_detector = CrashRegimeDetector(cfg.crash)
         self.slow_uptrend_detector = SlowUptrendDetector(cfg.slow_uptrend)
         self.trend_segment_engine = TrendSegmentEngine(cfg.trend_segment)
+        self.trend_bias_builder = TrendBiasBuilder(cfg.trend_bias)
         self.position_limit_violations = 0
         self.risk_rule_violations = 0
         self.max_margin_loss_ratio_observed = 0.0
@@ -57,6 +59,15 @@ class TradingEngine:
         self._last_crash_context: CrashContext | None = None
         self._last_slow_context: SlowTrendContext | None = None
         self._last_segment_context: SegmentContext | None = None
+        self._last_trend_bias: TrendBiasContext = neutral_trend_bias()
+        self._last_risk_budget: RiskBudget | None = None
+        self.legacy_trend_direct_block_count = 0
+        self.legacy_trend_direct_read_count = 0
+        self.hard_counter_open_count = 0
+        self.trend_add_candidate_count = 0
+        self.trend_add_risk_evaluated_count = 0
+        self.trend_add_rejected_by_risk_count = 0
+        self.trend_add_allowed_count = 0
         self._downtrend_regime_active: bool = False
         self._sentinel_used_in_regime: bool = False
 
@@ -342,6 +353,16 @@ class TradingEngine:
             is_model_blind=bool(crash_context.is_model_blind_crash),
         )
         self._last_segment_context = segment_context
+        trend_bias = self.trend_bias_builder.build(
+            trend_signal=trend_signal,
+            segment_context=segment_context,
+            slow_context=slow_context,
+            crash_context=crash_context,
+            trend_context=trend_context,
+        )
+        self._last_trend_bias = trend_bias
+        risk_budget = self.risk_manager.compute_risk_budget(self.portfolio, bar_index=current_bar.idx)
+        self._last_risk_budget = risk_budget
         p = self.portfolio
         if crash_context.is_crash:
             if not p.crash_regime_active:
@@ -397,6 +418,9 @@ class TradingEngine:
                 blocked_reason=action.reason_code,
                 slow_context=slow_context,
                 segment_context=segment_context,
+                trend_bias=trend_bias,
+                risk_budget=risk_budget,
+                decision_scope=self.cfg.trend_bias.decision_scope if self.cfg.trend_bias.enabled else "",
             )
             self.logger.record_equity(current_bar.ts, self.portfolio.equity)
             return
@@ -415,6 +439,30 @@ class TradingEngine:
             action = TradingAction(ActionType.REDUCE, self.portfolio.position.side, risk_event.reason, blocked_by="risk")
         elif risk_event.block_open and self.portfolio.position.is_flat:
             action = TradingAction(ActionType.BLOCK, Side.FLAT, risk_event.reason, blocked_by="risk")
+        elif (
+            self.cfg.trend_bias.enabled
+            and self.cfg.trend_bias.decision_scope == "full"
+            and not self.portfolio.position.is_flat
+        ):
+            pos_side = self.portfolio.position.side
+            if pos_side == Side.LONG and trend_bias.force_exit_long:
+                action = TradingAction(ActionType.CLOSE, Side.FLAT, "FORCE_EXIT_BIAS_LEG_END", blocked_by="trend_bias")
+            elif pos_side == Side.SHORT and trend_bias.force_exit_short:
+                action = TradingAction(ActionType.CLOSE, Side.FLAT, "FORCE_EXIT_BIAS_LEG_END", blocked_by="trend_bias")
+            else:
+                action = self.rule_engine.decide(
+                    signal,
+                    self.portfolio,
+                    bar_index=current_bar.idx,
+                    trend_context=trend_context,
+                    crash_context=crash_context,
+                    trend_signal=trend_signal,
+                    best_point_signal=best_point_signal,
+                    slow_context=slow_context,
+                    segment_context=segment_context,
+                    trend_bias=trend_bias,
+                    risk_budget=risk_budget,
+                )
         else:
             action = self.rule_engine.decide(
                 signal,
@@ -426,7 +474,28 @@ class TradingEngine:
                 best_point_signal=best_point_signal,
                 slow_context=slow_context,
                 segment_context=segment_context,
+                trend_bias=trend_bias,
+                risk_budget=risk_budget,
             )
+        if action.reason_code in ("BLOCK_COUNTER_TREND_LONG", "BLOCK_COUNTER_TREND_SHORT"):
+            self.legacy_trend_direct_block_count += 1
+        if action.reason_code == "BLOCK_LONG_DOWNTREND":
+            self.legacy_trend_direct_read_count += 1
+        if action.action in (ActionType.OPEN_LONG, ActionType.OPEN_SHORT):
+            if action.target_side == Side.LONG and trend_bias.counter_level_long == CounterTrendLevel.HARD_BLOCK:
+                self.hard_counter_open_count += 1
+            if action.target_side == Side.SHORT and trend_bias.counter_level_short == CounterTrendLevel.HARD_BLOCK:
+                self.hard_counter_open_count += 1
+        if action.reason_code == "ADD_TREND_CONTINUATION":
+            self.trend_add_candidate_count += 1
+            self.trend_add_risk_evaluated_count += 1
+            if risk_budget is not None:
+                side = self.portfolio.position.side
+                allowed = risk_budget.allow_add_long if side == Side.LONG else risk_budget.allow_add_short
+                if not allowed:
+                    self.trend_add_rejected_by_risk_count += 1
+                else:
+                    self.trend_add_allowed_count += 1
         if action.reason_code == "OPEN_SHORT_CRASH":
             if self.portfolio.crash_short_used_in_regime and self.cfg.crash_short.same_regime_once:
                 action = TradingAction(ActionType.BLOCK, Side.FLAT, "BLOCK_CRASH_ONCE_PER_REGIME", blocked_by="crash")
@@ -442,6 +511,7 @@ class TradingEngine:
             trend_context=trend_context,
             trend_signal=trend_signal,
             slow_context=slow_context,
+            trend_bias=trend_bias,
         )
         if sized.position_ratio > self.cfg.base.max_position_ratio + 1e-12:
             self.position_limit_violations += 1
@@ -462,6 +532,9 @@ class TradingEngine:
             blocked_reason=action.reason_code if action.action == ActionType.BLOCK else "",
             slow_context=slow_context,
             segment_context=segment_context,
+            trend_bias=trend_bias,
+            risk_budget=risk_budget,
+            decision_scope=self.cfg.trend_bias.decision_scope if self.cfg.trend_bias.enabled else "",
         )
         self.logger.record_order(
             {

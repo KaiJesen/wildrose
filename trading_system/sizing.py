@@ -10,6 +10,7 @@ from trading_system.signal import TradingSignal
 from trading_system.trend import TrendContext
 from trading_system.trend_signal import TrendSignal
 from trading_system.slow_trend import SlowTrendContext
+from trading_system.trend_bias import TrendBiasContext
 
 
 @dataclass
@@ -23,8 +24,45 @@ class SizedAction:
 
 
 class PositionSizer:
+    _SCOPE_ORDER = {"observe": 0, "open_only": 1, "open_size": 2, "full": 3}
+
     def __init__(self, cfg: TradingSystemConfig) -> None:
         self.cfg = cfg
+
+    def _bias_size_active(self) -> bool:
+        tb = self.cfg.trend_bias
+        if not tb.enabled:
+            return False
+        return self._SCOPE_ORDER.get(tb.decision_scope, 0) >= self._SCOPE_ORDER.get("open_size", 0)
+
+    def _apply_size_bias(
+        self,
+        ratio: float,
+        *,
+        side: Side,
+        trend_bias: TrendBiasContext | None,
+        reason_code: str,
+    ) -> float:
+        if trend_bias is None or not self._bias_size_active():
+            return ratio
+        tb = self.cfg.trend_bias
+        if side == Side.LONG:
+            ratio *= trend_bias.size_bias_long
+            if (
+                tb.allow_hard_counter_probe
+                and trend_bias.counter_level_long.value == "HARD_BLOCK"
+                and reason_code.startswith("OPEN_")
+            ):
+                ratio = min(ratio, tb.hard_counter_probe_ratio)
+        elif side == Side.SHORT:
+            ratio *= trend_bias.size_bias_short
+            if (
+                tb.allow_hard_counter_probe
+                and trend_bias.counter_level_short.value == "HARD_BLOCK"
+                and reason_code.startswith("OPEN_")
+            ):
+                ratio = min(ratio, tb.hard_counter_probe_ratio)
+        return min(ratio, self.cfg.base.max_position_ratio)
 
     def _base_ratio_from_conf(self, conf: float, p_risk: float) -> float:
         s = self.cfg.sizing
@@ -49,6 +87,7 @@ class PositionSizer:
         trend_context: TrendContext | None = None,
         trend_signal: TrendSignal | None = None,
         slow_context: SlowTrendContext | None = None,
+        trend_bias: TrendBiasContext | None = None,
     ) -> SizedAction:
         side = action.target_side
         cur = portfolio.position.position_ratio
@@ -94,6 +133,12 @@ class PositionSizer:
                 new_ratio = self._base_ratio_from_conf(signal.conf, signal.p_risk) if side != Side.FLAT else 0.0
             if portfolio.weekly_defensive_mode:
                 new_ratio *= self.cfg.risk.defensive_size_scale
+        new_ratio = self._apply_size_bias(
+            new_ratio,
+            side=side if side != Side.FLAT else action.target_side,
+            trend_bias=trend_bias,
+            reason_code=action.reason_code,
+        )
         notional = new_ratio * self.cfg.base.fixed_leverage
         margin = new_ratio
         return SizedAction(action.action, side, action.reason_code, new_ratio, notional, margin)

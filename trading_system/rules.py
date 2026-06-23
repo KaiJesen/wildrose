@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 
 from trading_system.config import TradingSystemConfig
@@ -11,6 +12,7 @@ from trading_system.signal import TradingSignal
 from trading_system.slow_trend import SlowTrendContext
 from trading_system.trend import TrendContext
 from trading_system.trend_signal import TrendDirection, TrendPhase, TrendSignal
+from trading_system.trend_bias import CounterTrendLevel, RiskBudget, TrendBiasContext
 from trading_system.trend_segment import SegmentContext, SubLegPhase, TrendLegType
 
 
@@ -24,14 +26,116 @@ class TradingAction:
 
 
 class RuleEngine:
+    _SCOPE_ORDER = {"observe": 0, "open_only": 1, "open_size": 2, "full": 3}
+
     def __init__(self, cfg: TradingSystemConfig) -> None:
         self.cfg = cfg
 
-    def _is_standard_short_entry(self, signal: TradingSignal) -> bool:
+    def _bias_scope_at_least(self, scope: str) -> bool:
+        tb = self.cfg.trend_bias
+        if not tb.enabled:
+            return False
+        return self._SCOPE_ORDER.get(tb.decision_scope, 0) >= self._SCOPE_ORDER.get(scope, 0)
+
+    def _legacy_segment_counter_blocks(self) -> bool:
+        tb = self.cfg.trend_bias
+        if tb.enabled and tb.disable_legacy_trend_rules and self._bias_scope_at_least("open_only"):
+            return False
+        return True
+
+    def _effective_open_thresholds(
+        self,
+        trend_bias: TrendBiasContext | None,
+        *,
+        side: str,
+    ) -> tuple[float, float]:
         r = self.cfg.rule
+        if not self._bias_scope_at_least("open_only") or trend_bias is None:
+            if side == "long":
+                return r.open_edge_threshold, r.open_prob_threshold
+            return r.open_edge_threshold, r.open_prob_threshold
+        if side == "long":
+            bias = max(trend_bias.open_bias_long, 1e-6)
+            counter = trend_bias.counter_level_long
+        else:
+            bias = max(trend_bias.open_bias_short, 1e-6)
+            counter = trend_bias.counter_level_short
+        eff_edge = r.open_edge_threshold / bias
+        eff_prob = r.open_prob_threshold / bias
+        if counter == CounterTrendLevel.LIGHT:
+            eff_prob = r.open_prob_threshold
+        return eff_edge, eff_prob
+
+    def _bias_open_gate(
+        self,
+        trend_bias: TrendBiasContext | None,
+        risk_budget: RiskBudget | None,
+        *,
+        side: str,
+    ) -> TradingAction | None:
+        if not self._bias_scope_at_least("open_only") or trend_bias is None:
+            return None
+        if side == "long":
+            if not trend_bias.allow_open_long:
+                return TradingAction(ActionType.BLOCK, Side.FLAT, "BLOCK_BIAS_LONG_OPEN", blocked_by="trend_bias")
+            if (
+                self._bias_scope_at_least("open_size")
+                and risk_budget is not None
+                and not risk_budget.allow_open_long
+            ):
+                reason = risk_budget.open_reject_reason_long or "BLOCK_RISK_BUDGET_LONG"
+                return TradingAction(ActionType.BLOCK, Side.FLAT, reason, blocked_by="risk_budget")
+            if (
+                self.cfg.trend_bias.disable_legacy_trend_rules
+                and trend_bias.counter_level_long == CounterTrendLevel.HARD_BLOCK
+                and not self.cfg.trend_bias.allow_hard_counter_probe
+            ):
+                return TradingAction(
+                    ActionType.BLOCK, Side.FLAT, "BLOCK_BIAS_HARD_COUNTER_LONG", blocked_by="trend_bias"
+                )
+        elif side == "short":
+            if not trend_bias.allow_open_short:
+                return TradingAction(ActionType.BLOCK, Side.FLAT, "BLOCK_BIAS_SHORT_OPEN", blocked_by="trend_bias")
+            if (
+                self._bias_scope_at_least("open_size")
+                and risk_budget is not None
+                and not risk_budget.allow_open_short
+            ):
+                reason = risk_budget.open_reject_reason_short or "BLOCK_RISK_BUDGET_SHORT"
+                return TradingAction(ActionType.BLOCK, Side.FLAT, reason, blocked_by="risk_budget")
+            if (
+                self.cfg.trend_bias.disable_legacy_trend_rules
+                and trend_bias.counter_level_short == CounterTrendLevel.HARD_BLOCK
+                and not self.cfg.trend_bias.allow_hard_counter_probe
+            ):
+                return TradingAction(
+                    ActionType.BLOCK, Side.FLAT, "BLOCK_BIAS_HARD_COUNTER_SHORT", blocked_by="trend_bias"
+                )
+        return None
+
+    def _trend_exit_vote_threshold(
+        self,
+        trend_bias: TrendBiasContext | None,
+        *,
+        side: Side,
+    ) -> int:
+        base = self.cfg.trend_lifecycle.exit_confirm_votes
+        if not self._bias_scope_at_least("full") or trend_bias is None:
+            return base
+        if side == Side.LONG:
+            return max(1, math.ceil(base * trend_bias.exit_bias_long))
+        return max(1, math.ceil(base * trend_bias.exit_bias_short))
+
+    def _is_standard_short_entry(
+        self,
+        signal: TradingSignal,
+        trend_bias: TrendBiasContext | None = None,
+    ) -> bool:
+        r = self.cfg.rule
+        eff_edge_th, eff_prob_th = self._effective_open_thresholds(trend_bias, side="short")
         return (
-            signal.edge <= -r.open_edge_threshold
-            and signal.p_down >= r.open_prob_threshold
+            signal.edge <= -eff_edge_th
+            and signal.p_down >= eff_prob_th
             and signal.p_flat <= r.open_flat_max
             and signal.pred_cum_ret_5 < 0
             and signal.risk_ok
@@ -270,6 +374,8 @@ class RuleEngine:
         best_point_signal: BestPointSignal | None = None,
         slow_context: SlowTrendContext | None = None,
         segment_context: SegmentContext | None = None,
+        trend_bias: TrendBiasContext | None = None,
+        risk_budget: RiskBudget | None = None,
     ) -> TradingAction:
         pos = portfolio.position
         r = self.cfg.rule
@@ -277,29 +383,35 @@ class RuleEngine:
         tc = trend_context
         seg = segment_context
         if pos.is_flat:
+            eff_long_edge, eff_long_prob = self._effective_open_thresholds(trend_bias, side="long")
             if (
-                seg
+                self._legacy_segment_counter_blocks()
+                and seg
                 and self.cfg.trend_segment.enabled
                 and seg.should_avoid_counter
-                and signal.edge >= r.open_edge_threshold
-                and signal.p_up >= r.open_prob_threshold
+                and signal.edge >= eff_long_edge
+                and signal.p_up >= eff_long_prob
                 and seg.active_leg
                 and seg.active_leg.direction == TrendDirection.DOWN
             ):
                 return TradingAction(ActionType.BLOCK, Side.FLAT, "BLOCK_COUNTER_TREND_LONG", blocked_by="segment")
             if (
-                signal.edge >= r.open_edge_threshold
-                and signal.p_up >= r.open_prob_threshold
+                signal.edge >= eff_long_edge
+                and signal.p_up >= eff_long_prob
                 and signal.p_flat <= r.open_flat_max
                 and signal.pred_cum_ret_5 > 0
                 and signal.risk_ok
             ):
+                bias_block = self._bias_open_gate(trend_bias, risk_budget, side="long")
+                if bias_block is not None:
+                    return bias_block
                 if not self._bp_entry_ok(best_point_signal, side="long"):
                     return TradingAction(ActionType.BLOCK, Side.FLAT, "BLOCK_BP_LONG_ENTRY", blocked_by="best_point")
                 return TradingAction(ActionType.OPEN_LONG, Side.LONG, "OPEN_LONG_SIGNAL")
-            if self._is_standard_short_entry(signal):
+            if self._is_standard_short_entry(signal, trend_bias):
                 if (
-                    seg
+                    self._legacy_segment_counter_blocks()
+                    and seg
                     and self.cfg.trend_segment.enabled
                     and seg.should_avoid_counter
                     and seg.active_leg
@@ -307,6 +419,9 @@ class RuleEngine:
                     and seg.active_leg.is_confirmed
                 ):
                     return TradingAction(ActionType.BLOCK, Side.FLAT, "BLOCK_COUNTER_TREND_SHORT", blocked_by="segment")
+                bias_block = self._bias_open_gate(trend_bias, risk_budget, side="short")
+                if bias_block is not None:
+                    return bias_block
                 if not self._bp_entry_ok(best_point_signal, side="short"):
                     return TradingAction(ActionType.BLOCK, Side.FLAT, "BLOCK_BP_SHORT_ENTRY", blocked_by="best_point")
                 return TradingAction(ActionType.OPEN_SHORT, Side.SHORT, "OPEN_SHORT_SIGNAL")
@@ -318,6 +433,9 @@ class RuleEngine:
                 and signal.p_risk <= self.cfg.crash_short.risk_max
                 and signal.p_flat <= self.cfg.crash_short.flat_max
             ):
+                bias_block = self._bias_open_gate(trend_bias, risk_budget, side="short")
+                if bias_block is not None:
+                    return bias_block
                 if not self._bp_entry_ok(best_point_signal, side="short", crash=True):
                     return TradingAction(ActionType.BLOCK, Side.FLAT, "BLOCK_BP_CRASH_ENTRY", blocked_by="best_point")
                 return TradingAction(
@@ -335,13 +453,16 @@ class RuleEngine:
                 )
             sc = slow_context
             standard_long = (
-                signal.edge >= r.open_edge_threshold
-                and signal.p_up >= r.open_prob_threshold
+                signal.edge >= eff_long_edge
+                and signal.p_up >= eff_long_prob
                 and signal.p_flat <= r.open_flat_max
                 and signal.pred_cum_ret_5 > 0
                 and signal.risk_ok
             )
             if self._can_open_slow_up(signal, portfolio, crash_context, trend_signal, tc, sc, seg):
+                bias_block = self._bias_open_gate(trend_bias, risk_budget, side="long")
+                if bias_block is not None:
+                    return bias_block
                 return TradingAction(
                     ActionType.OPEN_LONG,
                     Side.LONG,
@@ -408,13 +529,19 @@ class RuleEngine:
                     return TradingAction(ActionType.REDUCE, side, "REDUCE_TREND_EXHAUSTION")
                 if pos.runner_active:
                     return TradingAction(ActionType.HOLD, side, "HOLD_TREND_RUNNER")
-                if (
+                add_ok = (
                     ts.phase == TrendPhase.ACCELERATION
                     and pos.add_count < self.cfg.base.max_add_count
                     and pos.position_ratio < self.cfg.base.max_position_ratio
                     and signal.p_risk < self.cfg.rule.risk_open_max
                     and profit_atr >= self.cfg.trend_position.add_profit_atr
-                ):
+                )
+                if add_ok and self._bias_scope_at_least("open_size") and trend_bias is not None:
+                    if side == Side.LONG:
+                        add_ok = trend_bias.allow_add_long and (risk_budget is None or risk_budget.allow_add_long)
+                    else:
+                        add_ok = trend_bias.allow_add_short and (risk_budget is None or risk_budget.allow_add_short)
+                if add_ok:
                     return TradingAction(ActionType.ADD, side, "ADD_TREND_CONTINUATION")
                 # Exit vote: best-point exit only contributes one vote.
                 votes = 0
@@ -449,7 +576,8 @@ class RuleEngine:
                     if pos.best_point_exit_count >= self.cfg.trend_lifecycle.bp_exit_confirm_bars:
                         votes += self._bp_exit_vote_weight(seg)
                 pos.trend_exit_votes = votes
-                if bar_index >= pos.min_hold_until and votes >= self.cfg.trend_lifecycle.exit_confirm_votes:
+                exit_threshold = self._trend_exit_vote_threshold(trend_bias, side=side)
+                if bar_index >= pos.min_hold_until and votes >= exit_threshold:
                     return TradingAction(ActionType.CLOSE, Side.FLAT, "CLOSE_TREND_EXIT_CONFIRMED")
                 return TradingAction(ActionType.HOLD, side, "HOLD_TREND_CONTINUATION")
         if side == Side.LONG and tc and tc.is_downtrend and not pos.entry_was_slow_up:

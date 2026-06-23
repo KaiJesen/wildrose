@@ -10,6 +10,7 @@ from trading_system.signal import TradingSignal
 from trading_system.trend import TrendContext
 from trading_system.trend_signal import TrendStrength, TrendSignal
 from trading_system.slow_trend import SlowTrendContext
+from trading_system.trend_bias import RiskBudget
 
 
 @dataclass
@@ -80,6 +81,51 @@ class RiskManager:
                     return RiskEvent(force_close=True, reason="CLOSE_MAX_HOLD_BARS")
         return RiskEvent()
 
+    def compute_risk_budget(self, portfolio: PortfolioState, *, bar_index: int) -> RiskBudget:
+        max_ratio = self.cfg.base.max_position_ratio
+        cur = portfolio.position.position_ratio
+        margin = portfolio.position.margin_used
+        worst_case = 0.0
+        if margin > 0:
+            worst_case = max(0.0, -portfolio.unrealized_pnl / max(1e-12, margin))
+        remaining_pos = max(0.0, max_ratio - cur)
+        loss_budget = max(0.0, self.cfg.base.catastrophe_margin_loss_buffer - worst_case)
+        allow_open = (
+            not portfolio.account_circuit_breaker
+            and not portfolio.daily_open_block
+            and bar_index > portfolio.cooldown_until
+        )
+        allow_add = allow_open and remaining_pos > 1e-6 and loss_budget > 0.05
+        reject_open = ""
+        reject_add = ""
+        if portfolio.account_circuit_breaker:
+            reject_open = "BLOCK_ACCOUNT_CIRCUIT"
+        elif portfolio.daily_open_block:
+            reject_open = "BLOCK_DAILY_DRAWDOWN"
+        elif bar_index <= portfolio.cooldown_until:
+            reject_open = "BLOCK_LOSS_STREAK_COOLDOWN"
+        if remaining_pos <= 1e-6:
+            reject_add = "RISK_NO_REMAINING_POSITION"
+        elif loss_budget <= 0.05:
+            reject_add = "RISK_LOSS_BUDGET_LOW"
+        return RiskBudget(
+            current_position_ratio=cur,
+            max_position_ratio=max_ratio,
+            current_margin_ratio=margin,
+            remaining_position_ratio=remaining_pos,
+            worst_case_loss_ratio=worst_case,
+            remaining_loss_budget_ratio=loss_budget,
+            allow_open_long=allow_open,
+            allow_open_short=allow_open,
+            allow_add_long=allow_add,
+            allow_add_short=allow_add,
+            allow_reverse=allow_open and loss_budget > 0.1,
+            open_reject_reason_long=reject_open,
+            open_reject_reason_short=reject_open,
+            add_reject_reason_long=reject_add,
+            add_reject_reason_short=reject_add,
+        )
+
     def validate_action(
         self,
         action: TradingAction,
@@ -87,12 +133,15 @@ class RiskManager:
         portfolio: PortfolioState,
         trend_context: TrendContext | None = None,
     ) -> TradingAction:
-        if (
+        tb = self.cfg.trend_bias
+        legacy_long_block = (
             action.action == ActionType.OPEN_LONG
             and trend_context
             and trend_context.is_downtrend
             and self.cfg.protection.block_long_in_downtrend
-        ):
+            and not (tb.enabled and tb.disable_legacy_trend_rules and tb.decision_scope != "observe")
+        )
+        if legacy_long_block:
             return TradingAction(ActionType.BLOCK, Side.FLAT, "BLOCK_LONG_DOWNTREND", blocked_by="trend")
         if action.action in (ActionType.OPEN_LONG, ActionType.OPEN_SHORT, ActionType.ADD):
             risk_open_max = self.cfg.rule.risk_open_max

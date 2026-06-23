@@ -13,6 +13,7 @@ from trading_system.signal import TradingSignal
 from trading_system.trend import TrendContext
 from trading_system.trend_signal import TrendSignal
 from trading_system.slow_trend import SlowTrendContext
+from trading_system.trend_bias import RiskBudget, TrendBiasContext
 from trading_system.trend_segment import SegmentContext
 
 
@@ -36,6 +37,9 @@ class TradeLogger:
         best_point_signal: BestPointSignal | None = None,
         slow_context: SlowTrendContext | None = None,
         segment_context: SegmentContext | None = None,
+        trend_bias: TrendBiasContext | None = None,
+        risk_budget: RiskBudget | None = None,
+        decision_scope: str = "",
         blocked_reason: str = "",
     ) -> None:
         tc = trend_context
@@ -44,6 +48,8 @@ class TradeLogger:
         bs = best_point_signal
         sc = slow_context
         seg = segment_context
+        tb = trend_bias
+        rb = risk_budget
         self.decisions.append(
             {
                 "ts": signal.ts,
@@ -132,6 +138,30 @@ class TradeLogger:
                 "should_hold_trend": int(seg.should_hold_trend) if seg else 0,
                 "should_avoid_counter": int(seg.should_avoid_counter) if seg else 0,
                 "segment_reason_codes": "|".join(seg.reason_codes) if seg else "",
+                "decision_scope": decision_scope,
+                "open_bias_long": tb.open_bias_long if tb else 1.0,
+                "alignment_score_long": tb.alignment_score_long if tb else 0,
+                "alignment_score_short": tb.alignment_score_short if tb else 0,
+                "open_bias_short": tb.open_bias_short if tb else 1.0,
+                "size_bias_long": tb.size_bias_long if tb else 1.0,
+                "size_bias_short": tb.size_bias_short if tb else 1.0,
+                "hold_bias_long": tb.hold_bias_long if tb else 1.0,
+                "hold_bias_short": tb.hold_bias_short if tb else 1.0,
+                "exit_bias_long": tb.exit_bias_long if tb else 1.0,
+                "exit_bias_short": tb.exit_bias_short if tb else 1.0,
+                "counter_level_long": tb.counter_level_long.value if tb else "NONE",
+                "counter_level_short": tb.counter_level_short.value if tb else "NONE",
+                "allow_open_long": int(tb.allow_open_long) if tb else 1,
+                "allow_open_short": int(tb.allow_open_short) if tb else 1,
+                "allow_add_long": int(tb.allow_add_long) if tb else 0,
+                "allow_add_short": int(tb.allow_add_short) if tb else 0,
+                "bias_reason_codes": "|".join(tb.reason_codes) if tb else "",
+                "risk_budget_allow_open_long": int(rb.allow_open_long) if rb else 1,
+                "risk_budget_allow_open_short": int(rb.allow_open_short) if rb else 1,
+                "risk_budget_allow_add_long": int(rb.allow_add_long) if rb else 0,
+                "risk_budget_allow_add_short": int(rb.allow_add_short) if rb else 0,
+                "risk_budget_remaining_position_ratio": rb.remaining_position_ratio if rb else 0.0,
+                "risk_budget_remaining_loss_budget_ratio": rb.remaining_loss_budget_ratio if rb else 1.0,
                 "lifecycle": portfolio.position.lifecycle,
                 "lifecycle_bars": portfolio.position.lifecycle_bars,
                 "min_hold_until": portfolio.position.min_hold_until,

@@ -295,6 +295,27 @@ class SlowUpLongHorizonLabelConfig:
 
 
 @dataclass(frozen=True)
+class TrendBiasConfig:
+    enabled: bool = True
+    decision_scope: str = "observe"
+    disable_legacy_trend_rules: bool = False
+    long_open_relax: float = 1.2
+    short_open_relax: float = 1.2
+    trend_size_boost: float = 1.2
+    light_counter_size_penalty: float = 0.7
+    medium_counter_size_penalty: float = 0.4
+    light_counter_tighten: float = 0.85
+    medium_counter_tighten: float = 0.6
+    crash_short_open_boost: float = 1.35
+    slow_up_size_boost: float = 1.15
+    slow_up_hold_boost: float = 1.2
+    trend_exit_vote_bonus: float = 1.2
+    counter_exit_vote_penalty: float = 0.85
+    allow_hard_counter_probe: bool = False
+    hard_counter_probe_ratio: float = 0.01
+
+
+@dataclass(frozen=True)
 class TradingSystemConfig:
     base: BaseConfig = BaseConfig()
     rule: RuleConfig = RuleConfig()
@@ -316,6 +337,7 @@ class TradingSystemConfig:
     slow_up_long_horizon_label: SlowUpLongHorizonLabelConfig = SlowUpLongHorizonLabelConfig()
     trend_segment: TrendSegmentConfig = TrendSegmentConfig()
     best_point: BestPointConfig = BestPointConfig()
+    trend_bias: TrendBiasConfig = TrendBiasConfig()
 
 
 def _tuple2(v: list[float] | tuple[float, float], default: tuple[float, float]) -> tuple[float, float]:
@@ -345,6 +367,7 @@ def load_config(path: str | Path) -> TradingSystemConfig:
     slow_up_position_p = payload.get("slow_up_position", {})
     slow_up_long_horizon_label_p = payload.get("slow_up_long_horizon_label", {})
     best_point_p = payload.get("best_point", {})
+    trend_bias_p = payload.get("trend_bias", {})
     trend_segment_p = dict(payload.get("trend_segment", {}))
     changepoint_p = trend_segment_p.pop("changepoint", {})
     ts_defaults = {**TrendSegmentConfig().__dict__, **trend_segment_p}
@@ -390,5 +413,6 @@ def load_config(path: str | Path) -> TradingSystemConfig:
         ),
         trend_segment=trend_segment,
         best_point=BestPointConfig(**{**BestPointConfig().__dict__, **best_point_p}),
+        trend_bias=TrendBiasConfig(**{**TrendBiasConfig().__dict__, **trend_bias_p}),
     )
 
