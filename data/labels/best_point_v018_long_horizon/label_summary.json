@@ -1,0 +1,23 @@
+{
+  "num_rows": 2000,
+  "num_trades": 59,
+  "entry_distribution": {
+    "0": 1705,
+    "1": 140,
+    "2": 155
+  },
+  "hold_distribution": {
+    "0": 1363,
+    "1": 297,
+    "2": 340
+  },
+  "exit_distribution": {
+    "0": 1764,
+    "1": 112,
+    "2": 124
+  },
+  "ambiguous_ratio": 0.0,
+  "avg_holding_bars": 11.796610169491526,
+  "avg_net_roi": 0.48423670305377525,
+  "label_coverage": 0.465
+}

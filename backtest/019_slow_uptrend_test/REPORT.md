@@ -1,0 +1,62 @@
+# Backtest Report v014
+
+- config: `configs/trading_rule_v019_slow_uptrend_0062e.json`
+- checkpoint: `prod/v0.0.0/checkpoint/market_state_best.pt`
+
+## Metrics
+
+- total_return: `-0.089858`
+- benchmark_return: `-0.169772`
+- excess_return: `0.079914`
+- max_drawdown: `-0.127740`
+- win_rate: `0.291667`
+- profit_factor: `0.749119`
+- trade_count: `24.000000`
+- avg_bars_held: `17.375000`
+- avg_fee_per_trade: `0.000470`
+- max_margin_loss_ratio_observed: `0.335587`
+- position_limit_violations: `0.000000`
+- risk_rule_violations: `0.000000`
+- probe_short_count: `0.000000`
+- probe_short_win_rate: `0.000000`
+- probe_short_total_return: `0.000000`
+- sentinel_short_count: `0.000000`
+- sentinel_upgrade_count: `0.000000`
+- sentinel_not_confirmed_close_count: `0.000000`
+- sentinel_short_total_return: `0.000000`
+- blocked_long_downtrend_count: `4.000000`
+- missed_downtrend_bars: `370.000000`
+- short_coverage_downtrend_ratio: `0.201207`
+- model_short_trend_hold_count: `1.000000`
+- avg_model_short_hold_bars: `24.500000`
+- close_max_hold_bars_in_downtrend_count: `0.000000`
+- close_short_trend_broken_count: `0.000000`
+- crash_short_count: `5.000000`
+- crash_upgrade_count: `0.000000`
+- same_regime_reentry_count: `0.000000`
+- model_blind_crash_count: `6.000000`
+- upgrade_crash_to_trend_short_count: `0.000000`
+- hold_crash_trend_confirming_count: `5.000000`
+- close_trend_exit_confirmed_count: `1.000000`
+- reduce_trend_profit_lock_count: `2.000000`
+- hold_trend_runner_count: `49.000000`
+- trend_upgrade_count: `12.000000`
+- trend_trade_count: `13.000000`
+- trend_trade_total_return: `0.023334`
+- avg_trend_hold_bars: `26.846154`
+- close_trend_broken_count: `0.000000`
+- reduce_trend_exhaustion_count: `9.000000`
+- add_trend_continuation_count: `0.000000`
+- short_trend_capture_ratio: `0.348259`
+- long_trend_capture_ratio: `0.571429`
+- missed_confirmed_trend_bars: `159.000000`
+- missed_slow_uptrend_bars: `262.000000`
+- slow_up_open_count: `15.000000`
+- watch_slow_uptrend_count: `262.000000`
+- upgrade_slow_long_to_trend_count: `8.000000`
+- close_slow_uptrend_broken_count: `7.000000`
+- reduce_slow_up_profit_lock_count: `0.000000`
+- hold_slow_up_runner_count: `0.000000`
+- slow_up_trade_count: `15.000000`
+- slow_up_trade_total_return: `-0.106245`
+- avg_slow_up_hold_bars: `18.533333`

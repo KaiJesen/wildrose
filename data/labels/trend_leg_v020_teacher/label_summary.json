@@ -1,0 +1,20 @@
+{
+  "num_rows": 8734,
+  "confirmed_ratio": 0.15983512708953515,
+  "leg_type_distribution": {
+    "TRANSITION_LEG": 4961,
+    "RANGE_LEG": 1858,
+    "FAST_DOWN_LEG": 913,
+    "FAST_UP_LEG": 810,
+    "SLOW_DOWN_LEG": 145,
+    "SLOW_UP_LEG": 43,
+    "SURGE_LEG": 4
+  },
+  "sub_phase_distribution": {
+    "IMPULSE": 7941,
+    "PULLBACK": 516,
+    "EXHAUSTION": 255,
+    "BASE": 22
+  },
+  "avg_bars_since_leg_start": 10.812686054499656
+}

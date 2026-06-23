@@ -96,6 +96,9 @@ def main() -> int:
             }
         print(f"epoch {ep}: train_loss={tr['loss']:.4f} valid_loss={va['loss']:.4f} entry_acc={va['entry_acc']:.4f} ic={va['opportunity_ic']:.4f}")
 
+    if best_state is not None:
+        model.load_state_dict(best_state["model"])
+
     ckpt_dir = Path(args.checkpoint_dir) / args.run_name
     ckpt_dir.mkdir(parents=True, exist_ok=True)
     ckpt = ckpt_dir / "best.pt"

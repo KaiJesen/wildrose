@@ -1,0 +1,20 @@
+{
+  "valid": {
+    "loss": 2.2691,
+    "entry_acc": 0.5512,
+    "opportunity_ic": 0.3837,
+    "best_score": 0.9349
+  },
+  "test": {
+    "loss": 2.301,
+    "entry_acc": 0.4779,
+    "opportunity_ic": 0.4164,
+    "entry_macro_f1": 0.4578
+  },
+  "label_mode": "major_legs",
+  "num_teacher_trades": 869,
+  "label_coverage": 0.9468,
+  "run_name": "017c_best_point_major_legs",
+  "checkpoint": "checkpoints/017_best_point_signal/017c_best_point_major_legs/best.pt",
+  "baseline_017b_opportunity_ic": 0.2825
+}

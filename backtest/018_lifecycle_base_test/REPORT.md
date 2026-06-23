@@ -1,0 +1,52 @@
+# Backtest Report v014
+
+- config: `configs/trading_rule_v018_lifecycle_0062e.json`
+- checkpoint: `prod/v0.0.0/checkpoint/market_state_best.pt`
+
+## Metrics
+
+- total_return: `0.063348`
+- benchmark_return: `-0.169772`
+- excess_return: `0.233120`
+- max_drawdown: `-0.027424`
+- win_rate: `0.555556`
+- profit_factor: `4.205035`
+- trade_count: `9.000000`
+- avg_bars_held: `15.444444`
+- avg_fee_per_trade: `0.000469`
+- max_margin_loss_ratio_observed: `0.335587`
+- position_limit_violations: `0.000000`
+- risk_rule_violations: `0.000000`
+- probe_short_count: `0.000000`
+- probe_short_win_rate: `0.000000`
+- probe_short_total_return: `0.000000`
+- sentinel_short_count: `0.000000`
+- sentinel_upgrade_count: `0.000000`
+- sentinel_not_confirmed_close_count: `0.000000`
+- sentinel_short_total_return: `0.000000`
+- blocked_long_downtrend_count: `4.000000`
+- missed_downtrend_bars: `393.000000`
+- short_coverage_downtrend_ratio: `0.201207`
+- model_short_trend_hold_count: `1.000000`
+- avg_model_short_hold_bars: `24.500000`
+- close_max_hold_bars_in_downtrend_count: `0.000000`
+- close_short_trend_broken_count: `0.000000`
+- crash_short_count: `5.000000`
+- crash_upgrade_count: `0.000000`
+- same_regime_reentry_count: `0.000000`
+- model_blind_crash_count: `6.000000`
+- upgrade_crash_to_trend_short_count: `0.000000`
+- hold_crash_trend_confirming_count: `5.000000`
+- close_trend_exit_confirmed_count: `1.000000`
+- reduce_trend_profit_lock_count: `2.000000`
+- hold_trend_runner_count: `49.000000`
+- trend_upgrade_count: `4.000000`
+- trend_trade_count: `5.000000`
+- trend_trade_total_return: `0.048366`
+- avg_trend_hold_bars: `25.400000`
+- close_trend_broken_count: `0.000000`
+- reduce_trend_exhaustion_count: `5.000000`
+- add_trend_continuation_count: `0.000000`
+- short_trend_capture_ratio: `0.348259`
+- long_trend_capture_ratio: `0.000000`
+- missed_confirmed_trend_bars: `230.000000`

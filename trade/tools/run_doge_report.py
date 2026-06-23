@@ -112,6 +112,9 @@ def plot_with_trades(
         x_in, x_out = times_num[tr.entry_index], times_num[tr.exit_index]
         y_in, y_out = tr.entry_price, tr.exit_price
 
+        # 持仓区间底色，便于看出整段趋势覆盖
+        ax.axvspan(x_in, x_out, color=c, alpha=0.08, zorder=1)
+
         # 进出场连线
         ax.plot([x_in, x_out], [y_in, y_out], color=c, ls="--", lw=1.1, alpha=0.85, zorder=3)
 
@@ -190,6 +193,7 @@ def write_report_md(
         f"- 单边手续费 `fee_rate` = {params['fee_rate']}（万分之一）",
         f"- 杠杆 `leverage` = {params['leverage']}x",
         f"- 最低净收益门槛 `min_net_roi` = {params['min_net_roi'] * 100:.2f}%",
+        f"- 标注模式 `mode` = `{params['mode']}`",
         f"- 入场/出场用价：`{params['price_field']}`",
         "",
         "净收益率公式（计杠杆、扣双边手续费）：",
@@ -236,7 +240,11 @@ def write_report_md(
         "",
         "## 说明",
         "",
-        "- 交易序列由动态规划在“互不重叠交易”空间内求总净收益最大，是该收益模型下的全局最优解。",
+        (
+            "- `major_legs`：ZigZag 识别主波段高低点，每段主涨/主跌腿一笔交易，覆盖整段趋势。"
+            if params.get("mode") == "major_legs"
+            else "- `dp`：动态规划在互不重叠交易空间内求总净收益最大，趋势内可能频繁反手。"
+        ),
         "- 每笔交易均已满足最低净收益门槛；不达标的波段不会被标注。",
         "- 入场/出场默认取收盘价，避免单根 K 线内部的未来函数。",
         "",
@@ -255,7 +263,16 @@ def main() -> None:
     ap.add_argument("--min-net-roi", type=float, default=0.002)
     ap.add_argument("--price-field", default=COL_CLOSE)
     ap.add_argument("--max-holding-bars", type=int, default=None)
-    ap.add_argument("--title", default="DOGE永续合约全局最优多空点标注")
+    ap.add_argument(
+        "--mode",
+        choices=("major_legs", "dp"),
+        default="major_legs",
+        help="major_legs=主波段整段标注（推荐）；dp=动态规划最大总收益（易碎片化）",
+    )
+    ap.add_argument("--zigzag-min-move-atr", type=float, default=1.8, help="主波段反转确认幅度（ATR 倍数，越大越少碎段）")
+    ap.add_argument("--merge-pullback-atr", type=float, default=2.0, help="趋势内浅回撤合并")
+    ap.add_argument("--min-leg-bars", type=int, default=2, help="最短波段 K 线数")
+    ap.add_argument("--title", default="DOGE永续合约主波段最优多空点标注")
     args = ap.parse_args()
 
     start = datetime.strptime(args.start, "%Y-%m-%d").replace(tzinfo=timezone.utc)
@@ -270,9 +287,10 @@ def main() -> None:
         "leverage": args.leverage,
         "min_net_roi": args.min_net_roi,
         "price_field": args.price_field,
+        "mode": args.mode,
     }
 
-    print("[2/4] 求全局最优多空点 ...")
+    print(f"[2/4] 标注多空点 mode={args.mode} ...")
     trades = find_optimal_trades(
         df,
         fee_rate=args.fee_rate,
@@ -280,6 +298,10 @@ def main() -> None:
         min_net_roi=args.min_net_roi,
         price_field=args.price_field,
         max_holding_bars=args.max_holding_bars,
+        mode=args.mode,
+        zigzag_min_move_atr=args.zigzag_min_move_atr,
+        merge_pullback_atr=args.merge_pullback_atr,
+        min_leg_bars=args.min_leg_bars,
     )
     stats = summarize_trades(trades, leverage=args.leverage)
     print(f"      交易 {stats['num_trades']} 笔，累计净收益 {stats['total_net_roi'] * 100:.2f}%")

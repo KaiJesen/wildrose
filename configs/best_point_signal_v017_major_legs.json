@@ -1,0 +1,38 @@
+{
+  "label": {
+    "mode": "major_legs",
+    "fee_rate": 0.0004,
+    "leverage": 20.0,
+    "min_net_roi": 0.03,
+    "max_holding_bars": 72,
+    "zigzag_min_move_atr": 1.8,
+    "zigzag_atr_period": 14,
+    "merge_pullback_atr": 2.0,
+    "min_leg_bars": 2,
+    "pre_entry_bars": 2,
+    "post_entry_bars": 2,
+    "pre_exit_bars": 2,
+    "post_exit_bars": 1,
+    "min_label_roi_gap": 0.01
+  },
+  "dataset": {
+    "context_bars": 96,
+    "train_ratio": 0.7,
+    "valid_ratio": 0.15
+  },
+  "training": {
+    "epochs": 12,
+    "batch_size": 64,
+    "lr": 0.0003,
+    "weight_decay": 0.01,
+    "entry_weight": 1.0,
+    "hold_weight": 0.6,
+    "exit_weight": 0.7,
+    "opportunity_weight": 0.4
+  },
+  "integration": {
+    "observe_only": true,
+    "long_entry_confirm_threshold": 0.55,
+    "short_entry_confirm_threshold": 0.55
+  }
+}

@@ -24,9 +24,16 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--leverage", type=float, default=20.0)
     p.add_argument("--min-net-roi", type=float, default=0.03)
     p.add_argument("--max-holding-bars", type=int, default=72)
+    p.add_argument("--min-holding-bars", type=int, default=1)
+    p.add_argument("--cooldown-after-trade", type=int, default=0)
     p.add_argument("--allow-long", action=argparse.BooleanOptionalAction, default=True)
     p.add_argument("--allow-short", action=argparse.BooleanOptionalAction, default=True)
-    p.add_argument("--out-dir", default="data/labels/best_point_v017")
+    p.add_argument("--mode", choices=("major_legs", "dp"), default="major_legs")
+    p.add_argument("--zigzag-min-move-atr", type=float, default=1.8)
+    p.add_argument("--zigzag-atr-period", type=int, default=14)
+    p.add_argument("--merge-pullback-atr", type=float, default=2.0)
+    p.add_argument("--min-leg-bars", type=int, default=2)
+    p.add_argument("--out-dir", default="data/labels/best_point_v017_major_legs")
     p.add_argument("--prefix", default="BTCUSDT_1h")
     return p.parse_args()
 
@@ -44,7 +51,15 @@ def main() -> int:
         allow_long=args.allow_long,
         allow_short=args.allow_short,
         price_field="close",
-        cfg=LabelerConfig(),
+        cfg=LabelerConfig(
+            mode=args.mode,
+            zigzag_min_move_atr=args.zigzag_min_move_atr,
+            zigzag_atr_period=args.zigzag_atr_period,
+            merge_pullback_atr=args.merge_pullback_atr,
+            min_leg_bars=args.min_leg_bars,
+        ),
+        min_holding_bars=args.min_holding_bars,
+        cooldown_after_trade=args.cooldown_after_trade,
     )
     labels.insert(0, COL_TIME, df[COL_TIME].to_numpy())
     out = save_label_outputs(labels=labels, trades=trades, summary=summary, out_dir=args.out_dir, prefix=args.prefix)

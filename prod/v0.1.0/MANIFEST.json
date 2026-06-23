@@ -1,0 +1,26 @@
+{
+  "product": "wildrose-trading-system",
+  "version": "v0.1.0",
+  "release_date": "2026-06-23",
+  "git_commit": "fa2f0b9f266507dadd2528f76f3b123c6180be72",
+  "git_commit_date": "2026-06-23 10:22:46 +0800",
+  "strategy": "v020 trend-segment tuned",
+  "model_checkpoint": "checkpoint/market_state_best.pt",
+  "model_source": "0065a_multi_seed_s45_market_state_stability",
+  "config": "config/trading_rule.json",
+  "code_packages": [
+    "trading_system",
+    "transformer_kit",
+    "market_data",
+    "best_point"
+  ],
+  "backtest_reference": {
+    "split": "test",
+    "metrics_file": "metrics/backtest_test_oos.json"
+  },
+  "supplemental_references": {
+    "best_point_filtered_metrics": "metrics/backtest_bp_filtered_test_oos.json",
+    "primary_report": "docs/REPORT_020_BACKTEST.md",
+    "best_point_report": "docs/REPORT_020_BEST_POINT.md"
+  }
+}
