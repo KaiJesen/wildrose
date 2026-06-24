@@ -52,3 +52,4 @@ checkpoints/
 *.jpg
 *.pdf
 !notebook/**/*.png
+!backtest/v023_baseline/**/*.png

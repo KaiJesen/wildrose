@@ -1,0 +1,627 @@
+{
+  "test": {
+    "split": "test",
+    "backtest_dir": "backtest/v023_baseline/test",
+    "bar_count": 1308.0,
+    "runner_metrics": {
+      "total_return": 0.09312992708799195,
+      "max_drawdown": -0.008545561025824003,
+      "trade_count": 8.0,
+      "short_trend_capture_ratio": 0.3018867924528302,
+      "long_trend_capture_ratio": 0.0,
+      "missed_confirmed_trend_bars": 248.0,
+      "slow_up_open_count": 0.0,
+      "watch_slow_uptrend_count": 534.0,
+      "leg_coverage_ratio": 0.17316017316017315
+    },
+    "participation_metrics": {
+      "leg_count": 30.0,
+      "leg_count_covered": 3.0,
+      "leg_count_coverage_ratio": 0.1,
+      "leg_bar_coverage_ratio": 0.09523809523809523,
+      "leg_pnl_capture_ratio": -0.0074536589104126395,
+      "counter_leg_participation_count": 3.0,
+      "counter_overlap_bar_ratio": 0.07792207792207792,
+      "small_move_leg_count": 17.0,
+      "leg_loss_coverage_count": 1.0,
+      "slow_up_watch_to_open_ratio": 0.0,
+      "slow_up_false_entry_count": 0.0
+    },
+    "legacy_comparison": {
+      "leg_coverage_ratio_legacy": {
+        "runner": 0.17316017316017315,
+        "participation_aligned_bar": 0.09523809523809523,
+        "delta": -0.07792207792207792
+      }
+    },
+    "legs_summary": [
+      {
+        "leg_id": 4,
+        "leg_type": "FAST_UP_LEG",
+        "leg_bars": 13,
+        "aligned_overlap_bars": 0,
+        "counter_overlap_bars": 0,
+        "effective_covered": false,
+        "captured_pnl": 0.0
+      },
+      {
+        "leg_id": 5,
+        "leg_type": "SLOW_UP_LEG",
+        "leg_bars": 1,
+        "aligned_overlap_bars": 0,
+        "counter_overlap_bars": 0,
+        "effective_covered": false,
+        "captured_pnl": 0.0
+      },
+      {
+        "leg_id": 6,
+        "leg_type": "FAST_UP_LEG",
+        "leg_bars": 6,
+        "aligned_overlap_bars": 0,
+        "counter_overlap_bars": 0,
+        "effective_covered": false,
+        "captured_pnl": 0.0
+      },
+      {
+        "leg_id": 9,
+        "leg_type": "SLOW_UP_LEG",
+        "leg_bars": 10,
+        "aligned_overlap_bars": 0,
+        "counter_overlap_bars": 0,
+        "effective_covered": false,
+        "captured_pnl": 0.0
+      },
+      {
+        "leg_id": 12,
+        "leg_type": "FAST_DOWN_LEG",
+        "leg_bars": 1,
+        "aligned_overlap_bars": 0,
+        "counter_overlap_bars": 0,
+        "effective_covered": false,
+        "captured_pnl": 0.0
+      },
+      {
+        "leg_id": 15,
+        "leg_type": "SLOW_UP_LEG",
+        "leg_bars": 6,
+        "aligned_overlap_bars": 0,
+        "counter_overlap_bars": 0,
+        "effective_covered": false,
+        "captured_pnl": 0.0
+      },
+      {
+        "leg_id": 17,
+        "leg_type": "SLOW_UP_LEG",
+        "leg_bars": 2,
+        "aligned_overlap_bars": 0,
+        "counter_overlap_bars": 0,
+        "effective_covered": false,
+        "captured_pnl": 0.0
+      },
+      {
+        "leg_id": 19,
+        "leg_type": "FAST_UP_LEG",
+        "leg_bars": 4,
+        "aligned_overlap_bars": 0,
+        "counter_overlap_bars": 0,
+        "effective_covered": false,
+        "captured_pnl": 0.0
+      },
+      {
+        "leg_id": 24,
+        "leg_type": "FAST_UP_LEG",
+        "leg_bars": 10,
+        "aligned_overlap_bars": 0,
+        "counter_overlap_bars": 0,
+        "effective_covered": false,
+        "captured_pnl": 0.0
+      },
+      {
+        "leg_id": 25,
+        "leg_type": "FAST_DOWN_LEG",
+        "leg_bars": 10,
+        "aligned_overlap_bars": 0,
+        "counter_overlap_bars": 0,
+        "effective_covered": false,
+        "captured_pnl": 0.0
+      },
+      {
+        "leg_id": 26,
+        "leg_type": "SLOW_DOWN_LEG",
+        "leg_bars": 9,
+        "aligned_overlap_bars": 0,
+        "counter_overlap_bars": 4,
+        "effective_covered": false,
+        "captured_pnl": -4.764856393198118e-05
+      },
+      {
+        "leg_id": 28,
+        "leg_type": "FAST_DOWN_LEG",
+        "leg_bars": 11,
+        "aligned_overlap_bars": 6,
+        "counter_overlap_bars": 0,
+        "effective_covered": true,
+        "captured_pnl": -0.0033763661045553
+      },
+      {
+        "leg_id": 32,
+        "leg_type": "SLOW_DOWN_LEG",
+        "leg_bars": 5,
+        "aligned_overlap_bars": 0,
+        "counter_overlap_bars": 0,
+        "effective_covered": false,
+        "captured_pnl": 0.0
+      },
+      {
+        "leg_id": 36,
+        "leg_type": "SLOW_DOWN_LEG",
+        "leg_bars": 25,
+        "aligned_overlap_bars": 0,
+        "counter_overlap_bars": 0,
+        "effective_covered": false,
+        "captured_pnl": 0.0
+      },
+      {
+        "leg_id": 37,
+        "leg_type": "FAST_UP_LEG",
+        "leg_bars": 3,
+        "aligned_overlap_bars": 0,
+        "counter_overlap_bars": 0,
+        "effective_covered": false,
+        "captured_pnl": 0.0
+      },
+      {
+        "leg_id": 44,
+        "leg_type": "FAST_DOWN_LEG",
+        "leg_bars": 5,
+        "aligned_overlap_bars": 0,
+        "counter_overlap_bars": 0,
+        "effective_covered": false,
+        "captured_pnl": 0.0
+      },
+      {
+        "leg_id": 49,
+        "leg_type": "FAST_UP_LEG",
+        "leg_bars": 7,
+        "aligned_overlap_bars": 0,
+        "counter_overlap_bars": 0,
+        "effective_covered": false,
+        "captured_pnl": 0.0
+      },
+      {
+        "leg_id": 52,
+        "leg_type": "FAST_DOWN_LEG",
+        "leg_bars": 6,
+        "aligned_overlap_bars": 6,
+        "counter_overlap_bars": 0,
+        "effective_covered": true,
+        "captured_pnl": 0.0662549185051166
+      },
+      {
+        "leg_id": 53,
+        "leg_type": "FAST_DOWN_LEG",
+        "leg_bars": 24,
+        "aligned_overlap_bars": 10,
+        "counter_overlap_bars": 4,
+        "effective_covered": true,
+        "captured_pnl": 0.0020908532136925
+      },
+      {
+        "leg_id": 54,
+        "leg_type": "FAST_DOWN_LEG",
+        "leg_bars": 10,
+        "aligned_overlap_bars": 0,
+        "counter_overlap_bars": 0,
+        "effective_covered": false,
+        "captured_pnl": 0.0
+      },
+      {
+        "leg_id": 55,
+        "leg_type": "FAST_UP_LEG",
+        "leg_bars": 2,
+        "aligned_overlap_bars": 0,
+        "counter_overlap_bars": 0,
+        "effective_covered": false,
+        "captured_pnl": 0.0
+      },
+      {
+        "leg_id": 56,
+        "leg_type": "SLOW_UP_LEG",
+        "leg_bars": 1,
+        "aligned_overlap_bars": 0,
+        "counter_overlap_bars": 0,
+        "effective_covered": false,
+        "captured_pnl": 0.0
+      },
+      {
+        "leg_id": 60,
+        "leg_type": "SLOW_UP_LEG",
+        "leg_bars": 8,
+        "aligned_overlap_bars": 0,
+        "counter_overlap_bars": 0,
+        "effective_covered": false,
+        "captured_pnl": 0.0
+      },
+      {
+        "leg_id": 62,
+        "leg_type": "FAST_UP_LEG",
+        "leg_bars": 2,
+        "aligned_overlap_bars": 0,
+        "counter_overlap_bars": 0,
+        "effective_covered": false,
+        "captured_pnl": 0.0
+      },
+      {
+        "leg_id": 65,
+        "leg_type": "SLOW_DOWN_LEG",
+        "leg_bars": 13,
+        "aligned_overlap_bars": 0,
+        "counter_overlap_bars": 0,
+        "effective_covered": false,
+        "captured_pnl": 0.0
+      },
+      {
+        "leg_id": 66,
+        "leg_type": "FAST_DOWN_LEG",
+        "leg_bars": 8,
+        "aligned_overlap_bars": 0,
+        "counter_overlap_bars": 0,
+        "effective_covered": false,
+        "captured_pnl": 0.0
+      },
+      {
+        "leg_id": 67,
+        "leg_type": "FAST_UP_LEG",
+        "leg_bars": 7,
+        "aligned_overlap_bars": 0,
+        "counter_overlap_bars": 0,
+        "effective_covered": false,
+        "captured_pnl": 0.0
+      },
+      {
+        "leg_id": 71,
+        "leg_type": "SLOW_DOWN_LEG",
+        "leg_bars": 5,
+        "aligned_overlap_bars": 0,
+        "counter_overlap_bars": 0,
+        "effective_covered": false,
+        "captured_pnl": 0.0316807249576611
+      },
+      {
+        "leg_id": 73,
+        "leg_type": "SLOW_UP_LEG",
+        "leg_bars": 10,
+        "aligned_overlap_bars": 0,
+        "counter_overlap_bars": 10,
+        "effective_covered": false,
+        "captured_pnl": 0.0
+      },
+      {
+        "leg_id": 75,
+        "leg_type": "SLOW_DOWN_LEG",
+        "leg_bars": 7,
+        "aligned_overlap_bars": 0,
+        "counter_overlap_bars": 0,
+        "effective_covered": false,
+        "captured_pnl": 0.0
+      }
+    ]
+  },
+  "valid": {
+    "split": "valid",
+    "backtest_dir": "backtest/v023_baseline/valid",
+    "bar_count": 1309.0,
+    "runner_metrics": {
+      "total_return": 0.04085928471795919,
+      "max_drawdown": -0.019514409906585373,
+      "trade_count": 17.0,
+      "short_trend_capture_ratio": 0.1951219512195122,
+      "long_trend_capture_ratio": 0.036585365853658534,
+      "missed_confirmed_trend_bars": 254.0,
+      "slow_up_open_count": 0.0,
+      "watch_slow_uptrend_count": 597.0,
+      "leg_coverage_ratio": 0.11304347826086956
+    },
+    "participation_metrics": {
+      "leg_count": 31.0,
+      "leg_count_covered": 2.0,
+      "leg_count_coverage_ratio": 0.06451612903225806,
+      "leg_bar_coverage_ratio": 0.09565217391304348,
+      "leg_pnl_capture_ratio": 0.18653905934097975,
+      "counter_leg_participation_count": 3.0,
+      "counter_overlap_bar_ratio": 0.017391304347826087,
+      "small_move_leg_count": 18.0,
+      "leg_loss_coverage_count": 0.0,
+      "slow_up_watch_to_open_ratio": 0.0,
+      "slow_up_false_entry_count": 0.0
+    },
+    "legacy_comparison": {
+      "leg_coverage_ratio_legacy": {
+        "runner": 0.11304347826086956,
+        "participation_aligned_bar": 0.09565217391304348,
+        "delta": -0.017391304347826084
+      }
+    },
+    "legs_summary": [
+      {
+        "leg_id": 3,
+        "leg_type": "SLOW_DOWN_LEG",
+        "leg_bars": 3,
+        "aligned_overlap_bars": 0,
+        "counter_overlap_bars": 0,
+        "effective_covered": false,
+        "captured_pnl": 0.0
+      },
+      {
+        "leg_id": 5,
+        "leg_type": "FAST_UP_LEG",
+        "leg_bars": 21,
+        "aligned_overlap_bars": 0,
+        "counter_overlap_bars": 0,
+        "effective_covered": false,
+        "captured_pnl": 0.0
+      },
+      {
+        "leg_id": 11,
+        "leg_type": "SLOW_UP_LEG",
+        "leg_bars": 6,
+        "aligned_overlap_bars": 0,
+        "counter_overlap_bars": 0,
+        "effective_covered": false,
+        "captured_pnl": 0.0
+      },
+      {
+        "leg_id": 13,
+        "leg_type": "FAST_UP_LEG",
+        "leg_bars": 29,
+        "aligned_overlap_bars": 2,
+        "counter_overlap_bars": 0,
+        "effective_covered": false,
+        "captured_pnl": 0.0304953494247889
+      },
+      {
+        "leg_id": 14,
+        "leg_type": "SLOW_UP_LEG",
+        "leg_bars": 4,
+        "aligned_overlap_bars": 0,
+        "counter_overlap_bars": 0,
+        "effective_covered": false,
+        "captured_pnl": -0.0003649442647987
+      },
+      {
+        "leg_id": 17,
+        "leg_type": "FAST_DOWN_LEG",
+        "leg_bars": 9,
+        "aligned_overlap_bars": 9,
+        "counter_overlap_bars": 0,
+        "effective_covered": true,
+        "captured_pnl": 0.0
+      },
+      {
+        "leg_id": 23,
+        "leg_type": "FAST_DOWN_LEG",
+        "leg_bars": 9,
+        "aligned_overlap_bars": 0,
+        "counter_overlap_bars": 0,
+        "effective_covered": false,
+        "captured_pnl": 0.0
+      },
+      {
+        "leg_id": 24,
+        "leg_type": "SLOW_UP_LEG",
+        "leg_bars": 4,
+        "aligned_overlap_bars": 0,
+        "counter_overlap_bars": 0,
+        "effective_covered": false,
+        "captured_pnl": 0.0
+      },
+      {
+        "leg_id": 25,
+        "leg_type": "FAST_DOWN_LEG",
+        "leg_bars": 1,
+        "aligned_overlap_bars": 0,
+        "counter_overlap_bars": 1,
+        "effective_covered": false,
+        "captured_pnl": 0.0035828228754521
+      },
+      {
+        "leg_id": 26,
+        "leg_type": "FAST_UP_LEG",
+        "leg_bars": 2,
+        "aligned_overlap_bars": 0,
+        "counter_overlap_bars": 0,
+        "effective_covered": false,
+        "captured_pnl": 0.0
+      },
+      {
+        "leg_id": 28,
+        "leg_type": "FAST_DOWN_LEG",
+        "leg_bars": 16,
+        "aligned_overlap_bars": 0,
+        "counter_overlap_bars": 2,
+        "effective_covered": false,
+        "captured_pnl": -0.0004158557806052
+      },
+      {
+        "leg_id": 29,
+        "leg_type": "FAST_DOWN_LEG",
+        "leg_bars": 13,
+        "aligned_overlap_bars": 11,
+        "counter_overlap_bars": 0,
+        "effective_covered": true,
+        "captured_pnl": 0.0009469420234312
+      },
+      {
+        "leg_id": 30,
+        "leg_type": "FAST_UP_LEG",
+        "leg_bars": 8,
+        "aligned_overlap_bars": 0,
+        "counter_overlap_bars": 0,
+        "effective_covered": false,
+        "captured_pnl": 0.0
+      },
+      {
+        "leg_id": 33,
+        "leg_type": "FAST_DOWN_LEG",
+        "leg_bars": 2,
+        "aligned_overlap_bars": 0,
+        "counter_overlap_bars": 0,
+        "effective_covered": false,
+        "captured_pnl": 0.0
+      },
+      {
+        "leg_id": 39,
+        "leg_type": "SLOW_DOWN_LEG",
+        "leg_bars": 1,
+        "aligned_overlap_bars": 0,
+        "counter_overlap_bars": 0,
+        "effective_covered": false,
+        "captured_pnl": 0.0
+      },
+      {
+        "leg_id": 41,
+        "leg_type": "SLOW_DOWN_LEG",
+        "leg_bars": 2,
+        "aligned_overlap_bars": 0,
+        "counter_overlap_bars": 0,
+        "effective_covered": false,
+        "captured_pnl": 0.0
+      },
+      {
+        "leg_id": 47,
+        "leg_type": "FAST_DOWN_LEG",
+        "leg_bars": 3,
+        "aligned_overlap_bars": 0,
+        "counter_overlap_bars": 0,
+        "effective_covered": false,
+        "captured_pnl": 0.0
+      },
+      {
+        "leg_id": 48,
+        "leg_type": "FAST_UP_LEG",
+        "leg_bars": 7,
+        "aligned_overlap_bars": 0,
+        "counter_overlap_bars": 0,
+        "effective_covered": false,
+        "captured_pnl": 0.0
+      },
+      {
+        "leg_id": 54,
+        "leg_type": "FAST_UP_LEG",
+        "leg_bars": 1,
+        "aligned_overlap_bars": 0,
+        "counter_overlap_bars": 0,
+        "effective_covered": false,
+        "captured_pnl": 0.0057292208249257
+      },
+      {
+        "leg_id": 57,
+        "leg_type": "SLOW_DOWN_LEG",
+        "leg_bars": 2,
+        "aligned_overlap_bars": 0,
+        "counter_overlap_bars": 0,
+        "effective_covered": false,
+        "captured_pnl": 0.0
+      },
+      {
+        "leg_id": 60,
+        "leg_type": "SLOW_UP_LEG",
+        "leg_bars": 2,
+        "aligned_overlap_bars": 0,
+        "counter_overlap_bars": 0,
+        "effective_covered": false,
+        "captured_pnl": 0.0
+      },
+      {
+        "leg_id": 62,
+        "leg_type": "FAST_UP_LEG",
+        "leg_bars": 25,
+        "aligned_overlap_bars": 0,
+        "counter_overlap_bars": 0,
+        "effective_covered": false,
+        "captured_pnl": 0.0
+      },
+      {
+        "leg_id": 64,
+        "leg_type": "FAST_UP_LEG",
+        "leg_bars": 3,
+        "aligned_overlap_bars": 0,
+        "counter_overlap_bars": 0,
+        "effective_covered": false,
+        "captured_pnl": 0.0001508501269367
+      },
+      {
+        "leg_id": 67,
+        "leg_type": "SLOW_UP_LEG",
+        "leg_bars": 9,
+        "aligned_overlap_bars": 0,
+        "counter_overlap_bars": 0,
+        "effective_covered": false,
+        "captured_pnl": 0.0
+      },
+      {
+        "leg_id": 68,
+        "leg_type": "SLOW_DOWN_LEG",
+        "leg_bars": 26,
+        "aligned_overlap_bars": 0,
+        "counter_overlap_bars": 0,
+        "effective_covered": false,
+        "captured_pnl": 0.0
+      },
+      {
+        "leg_id": 71,
+        "leg_type": "FAST_UP_LEG",
+        "leg_bars": 6,
+        "aligned_overlap_bars": 0,
+        "counter_overlap_bars": 0,
+        "effective_covered": false,
+        "captured_pnl": 0.0
+      },
+      {
+        "leg_id": 75,
+        "leg_type": "FAST_UP_LEG",
+        "leg_bars": 7,
+        "aligned_overlap_bars": 0,
+        "counter_overlap_bars": 0,
+        "effective_covered": false,
+        "captured_pnl": 0.0
+      },
+      {
+        "leg_id": 76,
+        "leg_type": "FAST_DOWN_LEG",
+        "leg_bars": 2,
+        "aligned_overlap_bars": 0,
+        "counter_overlap_bars": 1,
+        "effective_covered": false,
+        "captured_pnl": -1.1466933597333993e-05
+      },
+      {
+        "leg_id": 83,
+        "leg_type": "FAST_UP_LEG",
+        "leg_bars": 4,
+        "aligned_overlap_bars": 0,
+        "counter_overlap_bars": 0,
+        "effective_covered": false,
+        "captured_pnl": 0.0
+      },
+      {
+        "leg_id": 84,
+        "leg_type": "SLOW_UP_LEG",
+        "leg_bars": 2,
+        "aligned_overlap_bars": 0,
+        "counter_overlap_bars": 0,
+        "effective_covered": false,
+        "captured_pnl": -0.0016454207359832
+      },
+      {
+        "leg_id": 88,
+        "leg_type": "FAST_DOWN_LEG",
+        "leg_bars": 1,
+        "aligned_overlap_bars": 0,
+        "counter_overlap_bars": 0,
+        "effective_covered": false,
+        "captured_pnl": 0.0
+      }
+    ]
+  }
+}
