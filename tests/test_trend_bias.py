@@ -94,6 +94,56 @@ def test_crash_blocks_long_opens() -> None:
     assert bias.open_bias_short >= cfg.crash_short_open_boost
 
 
+def test_legacy_downtrend_soft_when_hard_block_disabled() -> None:
+    cfg = TrendBiasConfig(enabled=True, legacy_down_hard_block=False)
+    trend_ctx = TrendContext(
+        is_downtrend=True,
+        is_strong_downtrend=False,
+        is_uptrend=False,
+        trend_score=-2.0,
+        ret_3_atr=-0.5,
+        ret_6_atr=-1.0,
+        ema_fast=95.0,
+        ema_slow=100.0,
+        breakdown_low_n=True,
+        lower_high_low=True,
+        reason_codes=[],
+    )
+    bias = TrendBiasBuilder(cfg).build(
+        trend_signal=_minimal_trend_signal(direction=TrendDirection.UP),
+        segment_context=None,
+        slow_context=None,
+        crash_context=None,
+        trend_context=trend_ctx,
+    )
+    assert bias.allow_open_long is True
+    assert "LEGACY_DOWNTREND_SOFT_LONG" in bias.reason_codes
+
+
+def test_chop_soft_micro_weak_reduces_alignment() -> None:
+    from dataclasses import replace
+
+    cfg = TrendBiasConfig(enabled=True, chop_soft_micro_weight=0.0)
+    base_ts = _minimal_trend_signal(direction=TrendDirection.UP)
+    chop_ts = replace(base_ts, reason_codes=["CHOP_SOFT"])
+    base_bias = TrendBiasBuilder(cfg).build(
+        trend_signal=base_ts,
+        segment_context=None,
+        slow_context=None,
+        crash_context=None,
+        trend_context=None,
+    )
+    chop_bias = TrendBiasBuilder(cfg).build(
+        trend_signal=chop_ts,
+        segment_context=None,
+        slow_context=None,
+        crash_context=None,
+        trend_context=None,
+    )
+    assert "CHOP_SOFT_MICRO_WEAK" in chop_bias.reason_codes
+    assert chop_bias.alignment_score_long <= base_bias.alignment_score_long
+
+
 def test_hard_block_invariant() -> None:
     cfg = TrendBiasConfig(enabled=True)
     bias = TrendBiasBuilder(cfg).build(

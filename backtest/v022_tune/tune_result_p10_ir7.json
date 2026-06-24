@@ -1,0 +1,32 @@
+{
+  "recipe": "hybrid_v021_mem_bias_p10_ir7",
+  "params": {
+    "persistence_lookback": 10,
+    "invalid_reset_bars": 7,
+    "chop_guard_enabled": false
+  },
+  "backtest": {
+    "valid": {"total_return": 0.0409, "baseline_v021": 0.0373, "ratio": 1.10, "trades": 17},
+    "test": {"total_return": 0.0931, "baseline_v021": 0.0825, "ratio": 1.13, "trades": 8}
+  },
+  "module_gates": {
+    "valid": {
+      "teacher_trend_coverage": {"value": 0.749, "gate": "PASS"},
+      "confirmed_precision_vs_teacher": {"value": 0.552, "gate": "PASS"},
+      "false_confirm_on_range_teacher": {"value": 0.427, "gate": "FAIL"},
+      "broken_ratio": {"value": 0.414, "gate": "PASS"},
+      "hard_block_long_ratio": {"value": 0.108, "gate": "PASS"}
+    },
+    "test": {
+      "teacher_trend_coverage": {"value": 0.650, "gate": "PASS"},
+      "confirmed_precision_vs_teacher": {"value": 0.468, "gate": "FAIL"},
+      "false_confirm_on_range_teacher": {"value": 0.476, "gate": "FAIL"},
+      "broken_ratio": {"value": 0.314, "gate": "PASS"},
+      "hard_block_long_ratio": {"value": 0.196, "gate": "PASS"}
+    }
+  },
+  "alternates": {
+    "hybrid_tune_b": "chop on + eff_min=0.3; PnL ~v021, test precision +6pp, valid broken worse",
+    "p10_ir7_chop": "valid/test PnL 3.88%/9.10%, module mixed"
+  }
+}

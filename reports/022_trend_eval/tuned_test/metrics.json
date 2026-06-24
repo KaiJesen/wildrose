@@ -1,0 +1,57 @@
+{
+  "metadata": {
+    "symbol": "BTCUSDT",
+    "interval": "1h",
+    "start": "2026-04-29 10:00:00+00:00",
+    "end": "2026-06-22 23:00:00+00:00",
+    "split": "test",
+    "data_source": "binance_vision",
+    "data_cache_path": "",
+    "teacher_label_version": "020_major_legs_v1",
+    "teacher_params_sha256": "513b40210a065732256f94717ac57db8d5af4af9ab78b625bfede1d8b24663aa",
+    "config_path": "configs/trading_rule_v022_trend_quality_0062e.json",
+    "config_sha256": "3da83d117118a7b20434652fc707c51047d6cb2da7cc54eab56e57a541b52864",
+    "git_commit": "bbb020519c0a8df73858aee98005ebb4228474c2",
+    "run_timestamp": "2026-06-24T04:12:32.939809+00:00",
+    "missing_data_dates": []
+  },
+  "metrics": {
+    "teacher_trend_coverage": 0.6495726495726496,
+    "teacher_coverage_confirmed_only": 0.5470085470085471,
+    "teacher_coverage_confirmed_or_sustained": 0.6495726495726496,
+    "confirmed_precision_vs_teacher": 0.4677871148459384,
+    "false_confirm_on_range_teacher": 0.47619047619047616,
+    "choppy_false_confirm_rate": 0.0,
+    "broken_ratio": 0.3137404580152672,
+    "confirmed_direction_macro_f1": 0.43060146203768485,
+    "bar_count": 1310.0,
+    "teacher_trend_bar_count": 234.0,
+    "signal_confirmed_bar_count": 357.0,
+    "chop_triggered_bar_count": 0.0,
+    "segment_runtime_8745": 14.816342060017632,
+    "hard_block_long_ratio": 0.19618320610687023,
+    "hard_block_short_ratio": 0.1366412213740458,
+    "block_reason_entropy_long": 0.8972861334402658,
+    "block_reason_entropy_short": 0.6739073373662414,
+    "hard_block_symmetry_range_transition_ratio": 1.5846153846153845,
+    "block_long_by_reason": {
+      "CRASH": 15,
+      "LEGACY": 117,
+      "SEGMENT": 124,
+      "MACRO": 1
+    },
+    "block_short_by_reason": {
+      "COUNTER": 72,
+      "SEGMENT": 107
+    }
+  },
+  "gates": {
+    "teacher_trend_coverage": false,
+    "confirmed_precision_vs_teacher": false,
+    "false_confirm_on_range_teacher": false,
+    "choppy_false_confirm_rate": true,
+    "broken_ratio": true,
+    "segment_runtime_8745": true,
+    "hard_block_long_ratio": true
+  }
+}

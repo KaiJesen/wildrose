@@ -1,0 +1,26 @@
+{
+  "product": "wildrose-trading-system",
+  "version": "v1.1.0",
+  "release_date": "2026-06-24",
+  "git_commit": "bbb020519c0a8df73858aee98005ebb4228474c2",
+  "git_commit_date": "2026-06-23 23:07:15 +0800",
+  "strategy": "v022 trend-quality hybrid_v021_mem_bias_p10_ir7",
+  "model_checkpoint": "checkpoint/market_state_best.pt",
+  "model_source": "0062e_market_state_return_ic_recovery",
+  "config": "config/trading_rule.json",
+  "code_packages": ["trading_system", "transformer_kit", "market_data", "best_point"],
+  "backtest_reference": {
+    "symbol": "BTCUSDT",
+    "interval": "1h",
+    "days": 365,
+    "split": "test",
+    "metrics_file": "metrics/backtest_test_oos.json"
+  },
+  "supplemental_references": {
+    "phase_validation": "docs/REPORT_022_VALIDATION.md",
+    "validation_summary": "metrics/validation_summary.json",
+    "primary_report": "docs/REPORT_022_BACKTEST.md",
+    "system_test_report": "docs/REPORT_022_SYSTEM_TEST.md",
+    "project_log": "docs/PROJECT_LOG.md"
+  }
+}

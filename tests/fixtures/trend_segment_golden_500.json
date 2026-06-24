@@ -1,0 +1,170 @@
+[
+  {
+    "bar_idx": 0,
+    "leg_type": "NONE",
+    "sub_phase": "NONE",
+    "leg_state": "NO_LEG",
+    "bars_since_leg_start": 0,
+    "regime": "NEUTRAL"
+  },
+  {
+    "bar_idx": 25,
+    "leg_type": "NONE",
+    "sub_phase": "NONE",
+    "leg_state": "NO_LEG",
+    "bars_since_leg_start": 0,
+    "regime": "NEUTRAL"
+  },
+  {
+    "bar_idx": 50,
+    "leg_type": "NONE",
+    "sub_phase": "NONE",
+    "leg_state": "NO_LEG",
+    "bars_since_leg_start": 0,
+    "regime": "NEUTRAL"
+  },
+  {
+    "bar_idx": 75,
+    "leg_type": "TRANSITION_LEG",
+    "sub_phase": "IMPULSE",
+    "leg_state": "LEG_FORMING",
+    "bars_since_leg_start": 4,
+    "regime": "NEUTRAL"
+  },
+  {
+    "bar_idx": 100,
+    "leg_type": "FAST_UP_LEG",
+    "sub_phase": "IMPULSE",
+    "leg_state": "LEG_CONFIRMED",
+    "bars_since_leg_start": 29,
+    "regime": "NEUTRAL"
+  },
+  {
+    "bar_idx": 125,
+    "leg_type": "FAST_UP_LEG",
+    "sub_phase": "IMPULSE",
+    "leg_state": "LEG_CONFIRMED",
+    "bars_since_leg_start": 54,
+    "regime": "NEUTRAL"
+  },
+  {
+    "bar_idx": 150,
+    "leg_type": "TRANSITION_LEG",
+    "sub_phase": "IMPULSE",
+    "leg_state": "LEG_FORMING",
+    "bars_since_leg_start": 3,
+    "regime": "NEUTRAL"
+  },
+  {
+    "bar_idx": 175,
+    "leg_type": "SLOW_UP_LEG",
+    "sub_phase": "IMPULSE",
+    "leg_state": "LEG_FORMING",
+    "bars_since_leg_start": 28,
+    "regime": "BULL"
+  },
+  {
+    "bar_idx": 200,
+    "leg_type": "SLOW_UP_LEG",
+    "sub_phase": "IMPULSE",
+    "leg_state": "LEG_CONFIRMED",
+    "bars_since_leg_start": 53,
+    "regime": "BULL"
+  },
+  {
+    "bar_idx": 225,
+    "leg_type": "RANGE_LEG",
+    "sub_phase": "IMPULSE",
+    "leg_state": "LEG_FORMING",
+    "bars_since_leg_start": 1,
+    "regime": "BULL"
+  },
+  {
+    "bar_idx": 250,
+    "leg_type": "FAST_DOWN_LEG",
+    "sub_phase": "IMPULSE",
+    "leg_state": "LEG_CONFIRMED",
+    "bars_since_leg_start": 26,
+    "regime": "NEUTRAL"
+  },
+  {
+    "bar_idx": 275,
+    "leg_type": "FAST_DOWN_LEG",
+    "sub_phase": "IMPULSE",
+    "leg_state": "LEG_CONFIRMED",
+    "bars_since_leg_start": 51,
+    "regime": "BEAR"
+  },
+  {
+    "bar_idx": 300,
+    "leg_type": "TRANSITION_LEG",
+    "sub_phase": "IMPULSE",
+    "leg_state": "LEG_FORMING",
+    "bars_since_leg_start": 5,
+    "regime": "BEAR"
+  },
+  {
+    "bar_idx": 325,
+    "leg_type": "TRANSITION_LEG",
+    "sub_phase": "IMPULSE",
+    "leg_state": "LEG_FORMING",
+    "bars_since_leg_start": 2,
+    "regime": "BULL"
+  },
+  {
+    "bar_idx": 350,
+    "leg_type": "SLOW_UP_LEG",
+    "sub_phase": "IMPULSE",
+    "leg_state": "LEG_CONFIRMED",
+    "bars_since_leg_start": 18,
+    "regime": "BULL"
+  },
+  {
+    "bar_idx": 375,
+    "leg_type": "RANGE_LEG",
+    "sub_phase": "IMPULSE",
+    "leg_state": "LEG_FORMING",
+    "bars_since_leg_start": 13,
+    "regime": "BULL"
+  },
+  {
+    "bar_idx": 400,
+    "leg_type": "FAST_UP_LEG",
+    "sub_phase": "IMPULSE",
+    "leg_state": "LEG_CONFIRMED",
+    "bars_since_leg_start": 14,
+    "regime": "BULL"
+  },
+  {
+    "bar_idx": 425,
+    "leg_type": "RANGE_LEG",
+    "sub_phase": "IMPULSE",
+    "leg_state": "LEG_FORMING",
+    "bars_since_leg_start": 7,
+    "regime": "BULL"
+  },
+  {
+    "bar_idx": 450,
+    "leg_type": "TRANSITION_LEG",
+    "sub_phase": "IMPULSE",
+    "leg_state": "LEG_FORMING",
+    "bars_since_leg_start": 32,
+    "regime": "BULL"
+  },
+  {
+    "bar_idx": 475,
+    "leg_type": "SLOW_UP_LEG",
+    "sub_phase": "IMPULSE",
+    "leg_state": "LEG_CONFIRMED",
+    "bars_since_leg_start": 57,
+    "regime": "BULL"
+  },
+  {
+    "bar_idx": 499,
+    "leg_type": "TRANSITION_LEG",
+    "sub_phase": "IMPULSE",
+    "leg_state": "LEG_FORMING",
+    "bars_since_leg_start": 7,
+    "regime": "BULL"
+  }
+]

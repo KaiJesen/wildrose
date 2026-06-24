@@ -80,6 +80,7 @@ def test_trend_exhaustion_triggers_reduce() -> None:
     pf.position.side = Side.LONG
     pf.position.hold_mode = "TREND"
     pf.position.position_ratio = 0.1
+    pf.position.entry_price = 100.0
     pf.position.trend_peak_score = 6.0
     sig = _sig(price=105.0)
     action = engine.decide(sig, pf, trend_signal=_trend(TrendDirection.UP, TrendPhase.EXHAUSTION))
