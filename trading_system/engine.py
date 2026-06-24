@@ -18,6 +18,7 @@ from trading_system.trend_segment import SegmentContext, TrendSegmentEngine
 from trading_system.trend import TrendContext, TrendRegimeFilter
 from trading_system.trend_signal import TrendMemory, TrendSignal, TrendSignalProvider
 from trading_system.trend_bias import CounterTrendLevel, RiskBudget, TrendBiasBuilder, TrendBiasContext, neutral_trend_bias
+from trading_system.trend_entry_qualifier import TrendEntryQualifier, TrendEntryQualification, empty_trend_entry_qualification
 
 
 @dataclass
@@ -46,7 +47,8 @@ class TradingEngine:
         self.crash_detector = CrashRegimeDetector(cfg.crash)
         self.slow_uptrend_detector = SlowUptrendDetector(cfg.slow_uptrend)
         self.trend_segment_engine = TrendSegmentEngine(cfg.trend_segment)
-        self.trend_bias_builder = TrendBiasBuilder(cfg.trend_bias)
+        self.trend_bias_builder = TrendBiasBuilder(cfg.trend_bias, cfg.trend_hold_extension)
+        self.trend_entry_qualifier = TrendEntryQualifier(cfg.trend_entry_qualifier)
         self.position_limit_violations = 0
         self.risk_rule_violations = 0
         self.max_margin_loss_ratio_observed = 0.0
@@ -60,6 +62,7 @@ class TradingEngine:
         self._last_slow_context: SlowTrendContext | None = None
         self._last_segment_context: SegmentContext | None = None
         self._last_trend_bias: TrendBiasContext = neutral_trend_bias()
+        self._last_trend_entry_qualification: TrendEntryQualification = empty_trend_entry_qualification()
         self._last_risk_budget: RiskBudget | None = None
         self.legacy_trend_direct_block_count = 0
         self.legacy_trend_direct_read_count = 0
@@ -132,6 +135,7 @@ class TradingEngine:
                     "entry_was_sentinel": int(pos.entry_was_sentinel),
                     "entry_was_crash": int(pos.entry_was_crash),
                     "entry_was_slow_up": int(pos.entry_was_slow_up),
+                    "entry_was_trend_qualified": int(pos.entry_was_trend_qualified),
                     "entry_leg_id": pos.entry_leg_id,
                     "entry_leg_type": pos.entry_leg_type,
                     "hold_mode": pos.hold_mode,
@@ -178,6 +182,10 @@ class TradingEngine:
             pos.entry_was_sentinel = bool(fill.reason_code == "OPEN_SHORT_SENTINEL")
             pos.entry_was_crash = bool(fill.reason_code == "OPEN_SHORT_CRASH")
             pos.entry_was_slow_up = bool(fill.reason_code == "OPEN_LONG_SLOW_TREND")
+            pos.entry_was_trend_qualified = fill.reason_code in (
+                "OPEN_LONG_TREND_QUALIFIED",
+                "OPEN_SHORT_TREND_QUALIFIED",
+            )
             pos.hold_mode = "NORMAL"
             if pos.entry_was_crash:
                 pos.hold_mode = "CRASH"
@@ -185,6 +193,9 @@ class TradingEngine:
             elif pos.entry_was_slow_up:
                 pos.hold_mode = "SLOW_UP"
                 pos.lifecycle = "PROBATION"
+            elif pos.entry_was_trend_qualified:
+                pos.hold_mode = "TREND"
+                pos.lifecycle = "TREND"
             else:
                 pos.lifecycle = "NONE"
             pos.trend_hold_bars = 0
@@ -220,6 +231,8 @@ class TradingEngine:
             stop_mult = self.cfg.risk.stop_atr_mult
             if fill.reason_code == "OPEN_LONG_SLOW_TREND":
                 stop_mult = self.cfg.slow_up_position.stop_atr_mult
+            elif fill.reason_code in ("OPEN_LONG_TREND_QUALIFIED", "OPEN_SHORT_TREND_QUALIFIED"):
+                stop_mult = self.cfg.trend_entry_qualifier.stop_atr_mult
             pos.stop_price = (
                 fill.price - stop_mult * current_bar.atr
                 if side == Side.LONG
@@ -237,6 +250,8 @@ class TradingEngine:
             )
             if pos.entry_was_slow_up:
                 pos.min_hold_until = current_bar.idx + self.cfg.slow_up_position.min_hold_bars
+            elif pos.entry_was_trend_qualified:
+                pos.min_hold_until = current_bar.idx + self.cfg.trend_lifecycle.min_trend_hold_bars
             pos.entry_signal_snapshot = {
                 "reason_code": fill.reason_code,
                 "entry_trend_context": "|".join(self._last_trend_context.reason_codes) if self._last_trend_context else "",
@@ -361,6 +376,13 @@ class TradingEngine:
             trend_context=trend_context,
         )
         self._last_trend_bias = trend_bias
+        trend_entry_qualification = self.trend_entry_qualifier.compute(
+            trend_signal=trend_signal,
+            segment_context=segment_context,
+            slow_context=slow_context,
+            crash_context=crash_context,
+        )
+        self._last_trend_entry_qualification = trend_entry_qualification
         risk_budget = self.risk_manager.compute_risk_budget(self.portfolio, bar_index=current_bar.idx)
         self._last_risk_budget = risk_budget
         p = self.portfolio
@@ -421,6 +443,7 @@ class TradingEngine:
                 trend_bias=trend_bias,
                 risk_budget=risk_budget,
                 decision_scope=self.cfg.trend_bias.decision_scope if self.cfg.trend_bias.enabled else "",
+                trend_entry_qualification=trend_entry_qualification,
             )
             self.logger.record_equity(current_bar.ts, self.portfolio.equity)
             return
@@ -432,6 +455,7 @@ class TradingEngine:
             trend_context=trend_context,
             trend_signal=trend_signal,
             slow_context=slow_context,
+            trend_bias=trend_bias,
         )
         if risk_event.force_close:
             action = TradingAction(ActionType.CLOSE, Side.FLAT, risk_event.reason, blocked_by="risk")
@@ -462,6 +486,7 @@ class TradingEngine:
                     segment_context=segment_context,
                     trend_bias=trend_bias,
                     risk_budget=risk_budget,
+                    trend_entry_qualification=trend_entry_qualification,
                 )
         else:
             action = self.rule_engine.decide(
@@ -476,6 +501,7 @@ class TradingEngine:
                 segment_context=segment_context,
                 trend_bias=trend_bias,
                 risk_budget=risk_budget,
+                trend_entry_qualification=trend_entry_qualification,
             )
         if action.reason_code in ("BLOCK_COUNTER_TREND_LONG", "BLOCK_COUNTER_TREND_SHORT"):
             self.legacy_trend_direct_block_count += 1
@@ -535,6 +561,7 @@ class TradingEngine:
             trend_bias=trend_bias,
             risk_budget=risk_budget,
             decision_scope=self.cfg.trend_bias.decision_scope if self.cfg.trend_bias.enabled else "",
+            trend_entry_qualification=trend_entry_qualification,
         )
         self.logger.record_order(
             {

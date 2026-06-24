@@ -143,6 +143,9 @@ class PositionSizer:
                 if slow_context is not None and not slow_context.is_stable_slow_uptrend:
                     slow_ratio = sp.position_ratio
                 new_ratio = min(self.cfg.base.max_position_ratio, min(slow_ratio, sp.max_position_ratio))
+            elif action.reason_code in ("OPEN_LONG_TREND_QUALIFIED", "OPEN_SHORT_TREND_QUALIFIED"):
+                tq = self.cfg.trend_entry_qualifier
+                new_ratio = min(self.cfg.base.max_position_ratio, min(tq.position_ratio, tq.max_position_ratio))
             elif action.reason_code == "OPEN_SHORT_SENTINEL":
                 s = self.cfg.sentinel_short
                 new_ratio = min(self.cfg.base.max_position_ratio, min(s.sentinel_position_ratio, s.sentinel_max_position_ratio))

@@ -14,6 +14,7 @@ from trading_system.trend import TrendContext
 from trading_system.trend_signal import TrendSignal
 from trading_system.slow_trend import SlowTrendContext
 from trading_system.trend_bias import RiskBudget, TrendBiasContext
+from trading_system.trend_entry_qualifier import TrendEntryQualification
 from trading_system.trend_segment import SegmentContext
 
 
@@ -41,6 +42,7 @@ class TradeLogger:
         risk_budget: RiskBudget | None = None,
         decision_scope: str = "",
         blocked_reason: str = "",
+        trend_entry_qualification: TrendEntryQualification | None = None,
     ) -> None:
         tc = trend_context
         ts = trend_signal
@@ -50,6 +52,7 @@ class TradeLogger:
         seg = segment_context
         tb = trend_bias
         rb = risk_budget
+        teq = trend_entry_qualification
         self.decisions.append(
             {
                 "ts": signal.ts,
@@ -147,6 +150,8 @@ class TradeLogger:
                 "size_bias_short": tb.size_bias_short if tb else 1.0,
                 "hold_bias_long": tb.hold_bias_long if tb else 1.0,
                 "hold_bias_short": tb.hold_bias_short if tb else 1.0,
+                "time_exit_permission_long": int(tb.time_exit_permission_long) if tb else 1,
+                "time_exit_permission_short": int(tb.time_exit_permission_short) if tb else 1,
                 "exit_bias_long": tb.exit_bias_long if tb else 1.0,
                 "exit_bias_short": tb.exit_bias_short if tb else 1.0,
                 "counter_level_long": tb.counter_level_long.value if tb else "NONE",
@@ -175,6 +180,12 @@ class TradeLogger:
                     if portfolio.position.side.value == "LONG"
                     else 0.0
                 ),
+                "teq_allow_long": int(teq.allow_trend_entry_long) if teq else 0,
+                "teq_allow_short": int(teq.allow_trend_entry_short) if teq else 0,
+                "teq_entry_tier": teq.entry_tier if teq else "NONE",
+                "teq_relax_edge_mult": teq.relax_edge_mult if teq else 0.0,
+                "teq_relax_prob_delta": teq.relax_prob_delta if teq else 0.0,
+                "teq_reason_codes": "|".join(teq.reason_codes) if teq else "",
             }
         )
 

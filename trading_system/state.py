@@ -55,6 +55,7 @@ class PositionState:
     runner_active: bool = False
     exhaustion_reduce_done: bool = False
     entry_was_slow_up: bool = False
+    entry_was_trend_qualified: bool = False
     slow_up_exit_votes: int = 0
     slow_up_below_ema_mid_count: int = 0
     slow_up_weak_model_count: int = 0

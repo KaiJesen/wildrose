@@ -51,6 +51,8 @@ def eval_backtest_dir(bt_dir: Path, *, split: str) -> dict:
             "total_return", "max_drawdown", "trade_count", "missed_confirmed_trend_bars",
             "leg_coverage_ratio", "slow_up_open_count", "watch_slow_uptrend_count",
             "long_trend_capture_ratio", "short_trend_capture_ratio",
+            "trend_qualified_open_count", "trend_qualified_trade_count", "trend_qualified_pnl",
+            "trend_upgrade_count", "crash_short_count", "hard_counter_open_count",
         )},
         "participation_metrics": part.to_dict(),
         "legacy_comparison": legacy_cmp,

@@ -27,6 +27,7 @@ class PortfolioState:
     crash_short_used_in_regime: bool = False
     crash_short_cooldown_until: int = -1
     crash_release_count: int = 0
+    slow_up_watch_streak: int = 0
 
     _last_ts: datetime | None = None
 

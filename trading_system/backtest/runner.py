@@ -152,6 +152,11 @@ def run_backtest(
         1 for d in slow_up_rows if d.get("state") == "FLAT" and d.get("reason_code") in ("HOLD_NO_ENTRY", "WATCH_SLOW_UPTREND")
     )
     slow_up_open_count = sum(1 for d in logger.decisions if d.get("reason_code") == "OPEN_LONG_SLOW_TREND")
+    trend_qualified_open_count = sum(
+        1
+        for d in logger.decisions
+        if d.get("reason_code") in ("OPEN_LONG_TREND_QUALIFIED", "OPEN_SHORT_TREND_QUALIFIED")
+    )
     watch_slow_uptrend_count = sum(1 for d in logger.decisions if d.get("reason_code") == "WATCH_SLOW_UPTREND")
     upgrade_slow_long_to_trend_count = sum(1 for d in logger.decisions if d.get("reason_code") == "UPGRADE_SLOW_LONG_TO_TREND")
     close_slow_uptrend_broken_count = sum(1 for d in logger.decisions if d.get("reason_code") == "CLOSE_SLOW_UPTREND_BROKEN")
@@ -159,6 +164,8 @@ def run_backtest(
     hold_slow_up_runner_count = sum(1 for d in logger.decisions if d.get("reason_code") == "HOLD_SLOW_UP_RUNNER")
     slow_up_trades = [t for t in logger.trades if int(t.get("entry_was_slow_up", 0)) == 1]
     slow_up_trade_total_return = float(sum(float(t.get("net_pnl", 0.0)) for t in slow_up_trades))
+    trend_qualified_trades = [t for t in logger.trades if int(t.get("entry_was_trend_qualified", 0)) == 1]
+    trend_qualified_pnl = float(sum(float(t.get("net_pnl", 0.0)) for t in trend_qualified_trades))
     avg_slow_up_hold_bars = float(np.mean([float(t.get("bars_held", 0.0)) for t in slow_up_trades])) if slow_up_trades else 0.0
     confirmed_leg_rows = [
         d
@@ -266,6 +273,7 @@ def run_backtest(
             "missed_confirmed_trend_bars": float(missed_confirmed_trend_bars),
             "missed_slow_uptrend_bars": float(missed_slow_uptrend_bars),
             "slow_up_open_count": float(slow_up_open_count),
+            "trend_qualified_open_count": float(trend_qualified_open_count),
             "watch_slow_uptrend_count": float(watch_slow_uptrend_count),
             "upgrade_slow_long_to_trend_count": float(upgrade_slow_long_to_trend_count),
             "close_slow_uptrend_broken_count": float(close_slow_uptrend_broken_count),
@@ -273,6 +281,8 @@ def run_backtest(
             "hold_slow_up_runner_count": float(hold_slow_up_runner_count),
             "slow_up_trade_count": float(len(slow_up_trades)),
             "slow_up_trade_total_return": float(slow_up_trade_total_return),
+            "trend_qualified_trade_count": float(len(trend_qualified_trades)),
+            "trend_qualified_pnl": float(trend_qualified_pnl),
             "avg_slow_up_hold_bars": float(avg_slow_up_hold_bars),
             "leg_coverage_ratio": float(leg_coverage_ratio),
             "missed_slow_up_legs": float(missed_slow_up_legs),

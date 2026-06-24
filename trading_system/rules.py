@@ -13,6 +13,7 @@ from trading_system.slow_trend import SlowTrendContext
 from trading_system.trend import TrendContext
 from trading_system.trend_signal import TrendDirection, TrendPhase, TrendSignal
 from trading_system.trend_bias import CounterTrendLevel, RiskBudget, TrendBiasContext
+from trading_system.trend_entry_qualifier import TrendEntryQualification
 from trading_system.trend_segment import SegmentContext, SubLegPhase, TrendLegType
 
 
@@ -43,11 +44,41 @@ class RuleEngine:
             return False
         return True
 
+    def _regime_threshold_relax(
+        self,
+        *,
+        side: str,
+        trend_signal: TrendSignal | None = None,
+        slow_context: SlowTrendContext | None = None,
+        crash_context: CrashContext | None = None,
+        for_trend_qualified: bool = False,
+    ) -> tuple[float, float]:
+        rt = self.cfg.regime_threshold
+        if not rt.enabled:
+            return 1.0, 0.0
+        if for_trend_qualified and not rt.apply_to_trend_qualified:
+            return 1.0, 0.0
+        if not for_trend_qualified and not rt.apply_to_standard_opens:
+            return 1.0, 0.0
+        if side == "short" and crash_context and crash_context.is_model_blind_crash:
+            return rt.crash_edge_mult, rt.crash_prob_delta
+        if side == "long" and slow_context and slow_context.is_stable_slow_uptrend:
+            return rt.slow_up_edge_mult, rt.slow_up_prob_delta
+        if trend_signal and trend_signal.is_confirmed:
+            if side == "long" and trend_signal.direction == TrendDirection.UP:
+                return rt.trend_confirmed_edge_mult, rt.trend_confirmed_prob_delta
+            if side == "short" and trend_signal.direction == TrendDirection.DOWN:
+                return rt.trend_confirmed_edge_mult, rt.trend_confirmed_prob_delta
+        return 1.0, 0.0
+
     def _effective_open_thresholds(
         self,
         trend_bias: TrendBiasContext | None,
         *,
         side: str,
+        trend_signal: TrendSignal | None = None,
+        slow_context: SlowTrendContext | None = None,
+        crash_context: CrashContext | None = None,
     ) -> tuple[float, float]:
         r = self.cfg.rule
         if not self._bias_scope_at_least("open_only") or trend_bias is None:
@@ -70,7 +101,121 @@ class RuleEngine:
             eff_prob = r.open_prob_threshold
             if align < 1:
                 eff_edge = r.open_edge_threshold
+        edge_mult, prob_delta = self._regime_threshold_relax(
+            side=side,
+            trend_signal=trend_signal,
+            slow_context=slow_context,
+            crash_context=crash_context,
+        )
+        eff_edge *= edge_mult
+        eff_prob = max(0.0, eff_prob + prob_delta)
         return eff_edge, eff_prob
+
+    def _trend_qualified_thresholds(
+        self,
+        trend_bias: TrendBiasContext | None,
+        qualification: TrendEntryQualification,
+        *,
+        side: str,
+        trend_signal: TrendSignal | None = None,
+        slow_context: SlowTrendContext | None = None,
+        crash_context: CrashContext | None = None,
+    ) -> tuple[float, float]:
+        qcfg = self.cfg.trend_entry_qualifier
+        if side == "long":
+            base_edge = qcfg.min_edge_long
+            base_prob = qcfg.min_prob_long
+            if self._bias_scope_at_least("open_only") and trend_bias is not None:
+                bias = max(trend_bias.open_bias_long, 1e-6) * qcfg.open_bias_penalty
+                if bias > 1.0 and trend_bias.alignment_score_long < 1:
+                    bias = 1.0
+            else:
+                bias = 1.0
+        else:
+            base_edge = abs(qcfg.min_edge_short)
+            base_prob = qcfg.min_prob_short
+            if self._bias_scope_at_least("open_only") and trend_bias is not None:
+                bias = max(trend_bias.open_bias_short, 1e-6) * qcfg.open_bias_penalty
+                if bias > 1.0 and trend_bias.alignment_score_short < 1:
+                    bias = 1.0
+            else:
+                bias = 1.0
+        edge_mult, prob_delta = self._regime_threshold_relax(
+            side=side,
+            trend_signal=trend_signal,
+            slow_context=slow_context,
+            crash_context=crash_context,
+            for_trend_qualified=True,
+        )
+        eff_edge = base_edge * qualification.relax_edge_mult * edge_mult / bias
+        eff_prob = max(0.0, base_prob + qualification.relax_prob_delta + prob_delta) / bias
+        return eff_edge, eff_prob
+
+    def _try_trend_qualified_open(
+        self,
+        signal: TradingSignal,
+        trend_bias: TrendBiasContext | None,
+        risk_budget: RiskBudget | None,
+        qualification: TrendEntryQualification | None,
+        best_point_signal: BestPointSignal | None,
+        *,
+        side: str,
+        trend_signal: TrendSignal | None = None,
+        slow_context: SlowTrendContext | None = None,
+        crash_context: CrashContext | None = None,
+    ) -> TradingAction | None:
+        qcfg = self.cfg.trend_entry_qualifier
+        if not qcfg.enabled or qualification is None:
+            return None
+        if side == "long":
+            if not qualification.allow_trend_entry_long:
+                return None
+            eff_edge, eff_prob = self._trend_qualified_thresholds(
+                trend_bias, qualification, side="long",
+                trend_signal=trend_signal, slow_context=slow_context, crash_context=crash_context,
+            )
+            if not (
+                signal.edge >= eff_edge
+                and signal.p_up >= eff_prob
+                and signal.p_flat <= self.cfg.rule.open_flat_max
+                and signal.risk_ok
+            ):
+                return None
+            bias_block = self._bias_open_gate(trend_bias, risk_budget, side="long")
+            if bias_block is not None:
+                return bias_block
+            if qcfg.require_best_point and not self._bp_entry_ok(best_point_signal, side="long"):
+                return TradingAction(ActionType.BLOCK, Side.FLAT, "BLOCK_BP_TREND_QUAL_LONG", blocked_by="best_point")
+            return TradingAction(
+                ActionType.OPEN_LONG,
+                Side.LONG,
+                "OPEN_LONG_TREND_QUALIFIED",
+                diagnostics={"entry_tier": qualification.entry_tier, "teq_reasons": qualification.reason_codes},
+            )
+        if not qualification.allow_trend_entry_short:
+            return None
+        eff_edge, eff_prob = self._trend_qualified_thresholds(
+            trend_bias, qualification, side="short",
+            trend_signal=trend_signal, slow_context=slow_context, crash_context=crash_context,
+        )
+        if not (
+            signal.edge <= -eff_edge
+            and signal.p_down >= eff_prob
+            and signal.p_flat <= self.cfg.rule.open_flat_max
+            and signal.risk_ok
+        ):
+            return None
+        bias_block = self._bias_open_gate(trend_bias, risk_budget, side="short")
+        if bias_block is not None:
+            return bias_block
+        if qcfg.require_best_point and not self._bp_entry_ok(best_point_signal, side="short"):
+            return TradingAction(ActionType.BLOCK, Side.FLAT, "BLOCK_BP_TREND_QUAL_SHORT", blocked_by="best_point")
+        return TradingAction(
+            ActionType.OPEN_SHORT,
+            Side.SHORT,
+            "OPEN_SHORT_TREND_QUALIFIED",
+            diagnostics={"entry_tier": qualification.entry_tier, "teq_reasons": qualification.reason_codes},
+        )
 
     def _bias_open_gate(
         self,
@@ -136,9 +281,19 @@ class RuleEngine:
         self,
         signal: TradingSignal,
         trend_bias: TrendBiasContext | None = None,
+        *,
+        trend_signal: TrendSignal | None = None,
+        slow_context: SlowTrendContext | None = None,
+        crash_context: CrashContext | None = None,
     ) -> bool:
         r = self.cfg.rule
-        eff_edge_th, eff_prob_th = self._effective_open_thresholds(trend_bias, side="short")
+        eff_edge_th, eff_prob_th = self._effective_open_thresholds(
+            trend_bias,
+            side="short",
+            trend_signal=trend_signal,
+            slow_context=slow_context,
+            crash_context=crash_context,
+        )
         return (
             signal.edge <= -eff_edge_th
             and signal.p_down >= eff_prob_th
@@ -179,12 +334,17 @@ class RuleEngine:
         trend_context: TrendContext | None,
         slow_context: SlowTrendContext | None,
         segment_context: SegmentContext | None = None,
+        *,
+        watch_probe: bool = False,
     ) -> bool:
-        if slow_context is None or not self.cfg.slow_up_position.enabled or not self.cfg.slow_uptrend.enabled:
+        sp = self.cfg.slow_up_position
+        if slow_context is None or not sp.enabled or not self.cfg.slow_uptrend.enabled:
             return False
         if not slow_context.is_stable_slow_uptrend:
             return False
-        if signal.p_risk > self.cfg.slow_up_position.risk_max:
+        if watch_probe and portfolio.slow_up_watch_streak < sp.watch_min_bars:
+            return False
+        if signal.p_risk > sp.risk_max:
             return False
         if portfolio.daily_open_block or portfolio.account_circuit_breaker:
             return False
@@ -192,26 +352,40 @@ class RuleEngine:
             return False
         if trend_context and trend_context.is_downtrend:
             return False
-        if (
-            trend_signal
-            and trend_signal.direction == TrendDirection.DOWN
-        ):
+        if trend_signal and trend_signal.direction == TrendDirection.DOWN:
             return False
         if trend_signal and trend_signal.phase == TrendPhase.REVERSAL_RISK:
             return False
-        if trend_signal and trend_signal.direction != TrendDirection.UP:
+        if not watch_probe and trend_signal and trend_signal.direction != TrendDirection.UP:
             return False
         if self._model_opposes_slow_up(signal):
             return False
-        if signal.pred_cum_ret_5 < 0.0:
+        if not watch_probe and signal.pred_cum_ret_5 < 0.0:
             return False
+        if watch_probe:
+            if trend_signal and trend_signal.direction != TrendDirection.UP:
+                return False
+            if signal.pred_cum_ret_5 < sp.watch_probe_min_cum_ret:
+                return False
+            if signal.p_up < sp.watch_probe_min_p_up:
+                return False
+            if sp.watch_probe_require_up_leg and self.cfg.trend_segment.enabled and segment_context is not None:
+                if segment_context.leg_type not in (
+                    TrendLegType.SLOW_UP_LEG,
+                    TrendLegType.FAST_UP_LEG,
+                ):
+                    return False
+                if segment_context.bars_since_leg_start < sp.segment_min_bars:
+                    return False
+            return True
         if self.cfg.trend_segment.enabled and segment_context is not None:
             leg = segment_context.active_leg
             if leg is None or not leg.is_confirmed:
                 return False
             if segment_context.leg_type != TrendLegType.SLOW_UP_LEG:
                 return False
-            if segment_context.bars_since_leg_start < self.cfg.trend_segment.upgrade_min_bars:
+            min_bars = sp.segment_min_bars
+            if segment_context.bars_since_leg_start < min_bars:
                 return False
         return True
 
@@ -237,6 +411,23 @@ class RuleEngine:
         if side == Side.SHORT and leg.direction != TrendDirection.DOWN:
             return False
         return True
+
+    def _crash_segment_allows_upgrade(self, segment_context: SegmentContext | None, side: Side) -> bool:
+        if not self.cfg.trend_segment.enabled or segment_context is None:
+            return True
+        leg = segment_context.active_leg
+        if leg is None:
+            return False
+        if segment_context.leg_type not in (
+            TrendLegType.FAST_DOWN_LEG,
+            TrendLegType.SLOW_DOWN_LEG,
+            TrendLegType.CRASH_LEG,
+        ):
+            return False
+        if side == Side.SHORT and leg.direction != TrendDirection.DOWN:
+            return False
+        min_bars = min(self.cfg.trend_position.min_trend_age_for_upgrade, self.cfg.trend_segment.upgrade_min_bars)
+        return segment_context.bars_since_leg_start >= min_bars
 
     def _bp_exit_vote_weight(self, segment_context: SegmentContext | None) -> int:
         if not self.cfg.trend_segment.enabled or segment_context is None:
@@ -324,7 +515,8 @@ class RuleEngine:
         profit_atr = self._slow_up_profit_atr(signal, pos)
 
         if (
-            pos.hold_mode != "TREND"
+            sp.allow_trend_upgrade
+            and pos.hold_mode != "TREND"
             and profit_atr >= sp.upgrade_profit_atr
             and slow_context.is_slow_uptrend
             and signal.p_risk < self.cfg.rule.risk_exit_threshold
@@ -382,6 +574,7 @@ class RuleEngine:
         segment_context: SegmentContext | None = None,
         trend_bias: TrendBiasContext | None = None,
         risk_budget: RiskBudget | None = None,
+        trend_entry_qualification: TrendEntryQualification | None = None,
     ) -> TradingAction:
         pos = portfolio.position
         r = self.cfg.rule
@@ -389,7 +582,13 @@ class RuleEngine:
         tc = trend_context
         seg = segment_context
         if pos.is_flat:
-            eff_long_edge, eff_long_prob = self._effective_open_thresholds(trend_bias, side="long")
+            eff_long_edge, eff_long_prob = self._effective_open_thresholds(
+                trend_bias,
+                side="long",
+                trend_signal=trend_signal,
+                slow_context=slow_context,
+                crash_context=crash_context,
+            )
             if (
                 self._legacy_segment_counter_blocks()
                 and seg
@@ -414,7 +613,9 @@ class RuleEngine:
                 if not self._bp_entry_ok(best_point_signal, side="long"):
                     return TradingAction(ActionType.BLOCK, Side.FLAT, "BLOCK_BP_LONG_ENTRY", blocked_by="best_point")
                 return TradingAction(ActionType.OPEN_LONG, Side.LONG, "OPEN_LONG_SIGNAL")
-            if self._is_standard_short_entry(signal, trend_bias):
+            if self._is_standard_short_entry(
+                signal, trend_bias, trend_signal=trend_signal, slow_context=slow_context, crash_context=crash_context
+            ):
                 if (
                     self._legacy_segment_counter_blocks()
                     and seg
@@ -450,6 +651,32 @@ class RuleEngine:
                     "OPEN_SHORT_CRASH",
                     diagnostics={"is_crash_short": True, "strong_crash": cc.strong_crash},
                 )
+            teq_long = self._try_trend_qualified_open(
+                signal,
+                trend_bias,
+                risk_budget,
+                trend_entry_qualification,
+                best_point_signal,
+                side="long",
+                trend_signal=trend_signal,
+                slow_context=slow_context,
+                crash_context=crash_context,
+            )
+            if teq_long is not None:
+                return teq_long
+            teq_short = self._try_trend_qualified_open(
+                signal,
+                trend_bias,
+                risk_budget,
+                trend_entry_qualification,
+                best_point_signal,
+                side="short",
+                trend_signal=trend_signal,
+                slow_context=slow_context,
+                crash_context=crash_context,
+            )
+            if teq_short is not None:
+                return teq_short
             if protection.allow_sentinel_short and self.cfg.sentinel_short.enabled and self._is_sentinel_short_entry(signal, tc):
                 return TradingAction(
                     ActionType.OPEN_SHORT,
@@ -466,6 +693,7 @@ class RuleEngine:
                 and signal.risk_ok
             )
             if self._can_open_slow_up(signal, portfolio, crash_context, trend_signal, tc, sc, seg):
+                portfolio.slow_up_watch_streak = 0
                 bias_block = self._bias_open_gate(trend_bias, risk_budget, side="long")
                 if bias_block is not None:
                     return bias_block
@@ -476,12 +704,43 @@ class RuleEngine:
                     diagnostics={"stable_slow_up": True, "slow_up_score": sc.slow_up_score if sc else 0.0},
                 )
             if sc and sc.is_slow_uptrend and not standard_long:
+                if sc.is_stable_slow_uptrend:
+                    portfolio.slow_up_watch_streak += 1
+                else:
+                    portfolio.slow_up_watch_streak = 0
+                if (
+                    portfolio.slow_up_watch_streak >= self.cfg.slow_up_position.watch_min_bars
+                    and self._can_open_slow_up(
+                        signal, portfolio, crash_context, trend_signal, tc, sc, seg, watch_probe=True
+                    )
+                ):
+                    watch_streak = portfolio.slow_up_watch_streak
+                    portfolio.slow_up_watch_streak = 0
+                    bias_block = self._bias_open_gate(trend_bias, risk_budget, side="long")
+                    if bias_block is not None:
+                        return bias_block
+                    return TradingAction(
+                        ActionType.OPEN_LONG,
+                        Side.LONG,
+                        "OPEN_LONG_SLOW_TREND",
+                        diagnostics={
+                            "stable_slow_up": True,
+                            "slow_up_score": sc.slow_up_score,
+                            "watch_probe": True,
+                            "watch_streak": watch_streak,
+                        },
+                    )
                 return TradingAction(
                     ActionType.HOLD,
                     Side.FLAT,
                     "WATCH_SLOW_UPTREND",
-                    diagnostics={"slow_up_score": sc.slow_up_score, "leg_type": seg.leg_type.value if seg else "NONE"},
+                    diagnostics={
+                        "slow_up_score": sc.slow_up_score,
+                        "leg_type": seg.leg_type.value if seg else "NONE",
+                        "watch_streak": portfolio.slow_up_watch_streak,
+                    },
                 )
+            portfolio.slow_up_watch_streak = 0
             return TradingAction(ActionType.HOLD, Side.FLAT, "HOLD_NO_ENTRY")
 
         side = pos.side
@@ -542,6 +801,9 @@ class RuleEngine:
                     and signal.p_risk < self.cfg.rule.risk_open_max
                     and profit_atr >= self.cfg.trend_position.add_profit_atr
                 )
+                ext = self.cfg.trend_hold_extension
+                if add_ok and ext.enabled and seg and seg.leg_progress_ratio > ext.no_add_after_leg_progress_gt:
+                    add_ok = False
                 if add_ok and self._bias_scope_at_least("open_size") and trend_bias is not None:
                     if side == Side.LONG:
                         add_ok = trend_bias.allow_add_long and (risk_budget is None or risk_budget.allow_add_long)
@@ -601,7 +863,7 @@ class RuleEngine:
                 pos.entry_was_crash
                 and ts is not None
                 and self.cfg.trend_position.allow_crash_trend_upgrade
-                and self._segment_allows_upgrade(seg, Side.SHORT)
+                and self._crash_segment_allows_upgrade(seg, Side.SHORT)
                 and ts.direction == TrendDirection.DOWN
                 and ts.is_confirmed
                 and ts.phase in (TrendPhase.CONTINUATION, TrendPhase.ACCELERATION)
@@ -610,7 +872,9 @@ class RuleEngine:
                 and signal.p_risk < self.cfg.rule.risk_exit_threshold
             ):
                 return TradingAction(ActionType.HOLD, Side.SHORT, "UPGRADE_CRASH_TO_TREND_SHORT")
-            if pos.entry_was_crash and self._is_standard_short_entry(signal):
+            if pos.entry_was_crash and self._is_standard_short_entry(
+                signal, trend_bias, trend_signal=ts, crash_context=crash_context
+            ):
                 return TradingAction(
                     ActionType.ADD,
                     Side.SHORT,
@@ -643,7 +907,9 @@ class RuleEngine:
                         return TradingAction(ActionType.CLOSE, Side.FLAT, "CLOSE_CRASH_TRAIL")
 
             # Sentinel must be upgraded quickly, otherwise exit to avoid probe-like drag.
-            if pos.entry_was_sentinel and self._is_standard_short_entry(signal):
+            if pos.entry_was_sentinel and self._is_standard_short_entry(
+                signal, trend_bias, trend_signal=ts, slow_context=slow_context, crash_context=crash_context
+            ):
                 return TradingAction(
                     ActionType.ADD,
                     Side.SHORT,
@@ -725,7 +991,9 @@ class RuleEngine:
                 and signal.risk_ok
                 and ((side == Side.LONG and signal.pred_cum_ret_5 > 0) or (side == Side.SHORT and signal.pred_cum_ret_5 < 0))
             ):
-                if pos.entry_was_sentinel and side == Side.SHORT and not self._is_standard_short_entry(signal):
+                if pos.entry_was_sentinel and side == Side.SHORT and not self._is_standard_short_entry(
+                    signal, trend_bias, trend_signal=ts, slow_context=slow_context, crash_context=crash_context
+                ):
                     return TradingAction(ActionType.HOLD, side, "HOLD_SENTINEL_WAIT_STANDARD_CONFIRM")
                 return TradingAction(ActionType.ADD, side, "ADD_SIGNAL_CONFIRMED")
             return TradingAction(ActionType.HOLD, side, "HOLD_SIGNAL_VALID")

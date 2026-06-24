@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import Enum
 
-from trading_system.config import TrendBiasConfig
+from trading_system.config import TrendBiasConfig, TrendHoldExtensionConfig
 from trading_system.crash import CrashContext
 from trading_system.slow_trend import SlowTrendContext
 from trading_system.trend import TrendContext
@@ -41,6 +41,8 @@ class TrendBiasContext:
     hold_bias_short: float = 1.0
     exit_bias_long: float = 1.0
     exit_bias_short: float = 1.0
+    time_exit_permission_long: bool = True
+    time_exit_permission_short: bool = True
     risk_tolerance_bias_long: float = 1.0
     risk_tolerance_bias_short: float = 1.0
     allow_open_long: bool = True
@@ -138,8 +140,9 @@ def _apply_hard_block(
 
 
 class TrendBiasBuilder:
-    def __init__(self, cfg: TrendBiasConfig) -> None:
+    def __init__(self, cfg: TrendBiasConfig, hold_extension: TrendHoldExtensionConfig | None = None) -> None:
         self.cfg = cfg
+        self.hold_extension = hold_extension or TrendHoldExtensionConfig()
 
     def build(
         self,
@@ -384,6 +387,27 @@ class TrendBiasBuilder:
         active_leg_type = seg.leg_type.value if seg else ""
         leg_progress = seg.leg_progress_ratio if seg else 0.0
 
+        time_exit_long = True
+        time_exit_short = True
+        ext = self.hold_extension
+        if ext.enabled and seg and ts:
+            if (
+                leg_progress < ext.leg_progress_hold_boost_below
+                and ts.phase in (TrendPhase.CONTINUATION, TrendPhase.ACCELERATION)
+            ):
+                if align_long >= 1 and leg_direction == BiasDirection.UP:
+                    hold_bias_long *= ext.hold_bias_boost_mult
+                    time_exit_long = False
+                    reasons.append("HOLD_EXTEND_LEG_EARLY_LONG")
+                if align_short >= 1 and leg_direction == BiasDirection.DOWN:
+                    hold_bias_short *= ext.hold_bias_boost_mult
+                    time_exit_short = False
+                    reasons.append("HOLD_EXTEND_LEG_EARLY_SHORT")
+            if leg_progress > ext.leg_progress_time_exit_above or ts.phase == TrendPhase.EXHAUSTION:
+                time_exit_long = True
+                time_exit_short = True
+                reasons.append("TIME_EXIT_ALLOWED")
+
         return TrendBiasContext(
             macro_direction=macro_direction,
             leg_direction=leg_direction,
@@ -400,6 +424,8 @@ class TrendBiasBuilder:
             hold_bias_short=hold_bias_short,
             exit_bias_long=exit_bias_long,
             exit_bias_short=exit_bias_short,
+            time_exit_permission_long=time_exit_long,
+            time_exit_permission_short=time_exit_short,
             risk_tolerance_bias_long=1.0,
             risk_tolerance_bias_short=1.0,
             allow_open_long=allow_open_long,

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 
 from trading_system.config import TradingSystemConfig
@@ -10,7 +11,7 @@ from trading_system.signal import TradingSignal
 from trading_system.trend import TrendContext
 from trading_system.trend_signal import TrendStrength, TrendSignal
 from trading_system.slow_trend import SlowTrendContext
-from trading_system.trend_bias import RiskBudget
+from trading_system.trend_bias import RiskBudget, TrendBiasContext
 
 
 @dataclass
@@ -24,6 +25,10 @@ class RiskManager:
     def __init__(self, cfg: TradingSystemConfig) -> None:
         self.cfg = cfg
 
+    @staticmethod
+    def _scaled_max_bars(base: int, hold_bias: float) -> int:
+        return max(base, int(math.ceil(base * max(hold_bias, 1.0))))
+
     def check_pre_decision_risk(
         self,
         signal: TradingSignal,
@@ -33,6 +38,7 @@ class RiskManager:
         trend_context: TrendContext | None = None,
         trend_signal: TrendSignal | None = None,
         slow_context: SlowTrendContext | None = None,
+        trend_bias: TrendBiasContext | None = None,
     ) -> RiskEvent:
         if not signal.is_valid:
             return RiskEvent(block_open=True, reason=signal.reason_code or "INVALID_SIGNAL")
@@ -59,26 +65,43 @@ class RiskManager:
                 if margin_loss_ratio >= self.cfg.base.catastrophe_margin_loss_buffer:
                     return RiskEvent(force_close=True, reason="CLOSE_CATASTROPHE_MARGIN_LOSS")
             # Time exit: NORMAL and TREND use different hold limits.
-            if pos.hold_mode == "CRASH" and pos.side == Side.SHORT and self.cfg.crash_short.enabled:
-                crash_max = self.cfg.crash_short.max_hold_bars
-                if trend_context and getattr(trend_context, "is_strong_downtrend", False):
-                    crash_max = self.cfg.crash_short.strong_max_hold_bars
-                if pos.bars_held >= crash_max:
-                    return RiskEvent(force_close=True, reason="CLOSE_CRASH_MAX_HOLD_BARS")
-            elif pos.entry_was_slow_up or pos.hold_mode == "SLOW_UP":
-                slow_max = self.cfg.slow_up_position.max_hold_bars
-                if pos.bars_held >= slow_max:
-                    return RiskEvent(force_close=True, reason="CLOSE_SLOW_UP_MAX_HOLD_BARS")
-            elif pos.lifecycle in ("TREND", "PROTECT_PROFIT", "RUNNER") and self.cfg.trend_signal.enabled:
-                trend_max_hold = self.cfg.trend_position.max_trend_hold_bars
-                if trend_signal and trend_signal.strength in (TrendStrength.STRONG, TrendStrength.EXTREME):
-                    trend_max_hold = self.cfg.trend_position.strong_trend_hold_bars
-                if pos.bars_held >= trend_max_hold:
-                    return RiskEvent(force_close=True, reason="CLOSE_TREND_MAX_HOLD_BARS")
-            else:
-                normal_max = self.cfg.trend_hold.normal_max_hold_bars if self.cfg.trend_hold.enabled else self.cfg.rule.max_hold_bars
-                if pos.bars_held >= normal_max:
-                    return RiskEvent(force_close=True, reason="CLOSE_MAX_HOLD_BARS")
+            time_exit_ok = True
+            hold_bias = 1.0
+            if trend_bias is not None:
+                if pos.side == Side.LONG:
+                    time_exit_ok = trend_bias.time_exit_permission_long
+                    hold_bias = trend_bias.hold_bias_long
+                else:
+                    time_exit_ok = trend_bias.time_exit_permission_short
+                    hold_bias = trend_bias.hold_bias_short
+            if time_exit_ok:
+                if pos.hold_mode == "CRASH" and pos.side == Side.SHORT and self.cfg.crash_short.enabled:
+                    crash_max = self._scaled_max_bars(self.cfg.crash_short.max_hold_bars, hold_bias)
+                    if trend_context and getattr(trend_context, "is_strong_downtrend", False):
+                        crash_max = self._scaled_max_bars(self.cfg.crash_short.strong_max_hold_bars, hold_bias)
+                    if pos.bars_held >= crash_max:
+                        return RiskEvent(force_close=True, reason="CLOSE_CRASH_MAX_HOLD_BARS")
+                elif pos.entry_was_slow_up or pos.hold_mode == "SLOW_UP":
+                    slow_max = self._scaled_max_bars(self.cfg.slow_up_position.max_hold_bars, hold_bias)
+                    if pos.bars_held >= slow_max:
+                        return RiskEvent(force_close=True, reason="CLOSE_SLOW_UP_MAX_HOLD_BARS")
+                elif pos.lifecycle in ("TREND", "PROTECT_PROFIT", "RUNNER") and self.cfg.trend_signal.enabled:
+                    trend_max_hold = self._scaled_max_bars(self.cfg.trend_position.max_trend_hold_bars, hold_bias)
+                    if trend_signal and trend_signal.strength in (TrendStrength.STRONG, TrendStrength.EXTREME):
+                        trend_max_hold = self._scaled_max_bars(
+                            self.cfg.trend_position.strong_trend_hold_bars, hold_bias
+                        )
+                    if pos.bars_held >= trend_max_hold:
+                        return RiskEvent(force_close=True, reason="CLOSE_TREND_MAX_HOLD_BARS")
+                else:
+                    normal_max = (
+                        self.cfg.trend_hold.normal_max_hold_bars
+                        if self.cfg.trend_hold.enabled
+                        else self.cfg.rule.max_hold_bars
+                    )
+                    normal_max = self._scaled_max_bars(normal_max, hold_bias)
+                    if pos.bars_held >= normal_max:
+                        return RiskEvent(force_close=True, reason="CLOSE_MAX_HOLD_BARS")
         return RiskEvent()
 
     def compute_risk_budget(self, portfolio: PortfolioState, *, bar_index: int) -> RiskBudget:

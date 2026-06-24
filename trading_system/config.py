@@ -269,6 +269,12 @@ class SlowUpPositionConfig:
     runner_reduce_scale: float = 0.7
     model_opp_cum_ret_min: float = -0.10
     model_opp_edge_min: float = -0.04
+    watch_min_bars: int = 6
+    segment_min_bars: int = 4
+    watch_probe_require_up_leg: bool = True
+    watch_probe_min_cum_ret: float = -0.05
+    watch_probe_min_p_up: float = 0.28
+    allow_trend_upgrade: bool = True
     stop_atr_mult: float = 2.2
 
 
@@ -309,6 +315,52 @@ class SlowUpLongHorizonLabelConfig:
     max_holding_bars: int = 72
     max_adverse_excursion_ratio: float = 0.5
     cooldown_after_trade: int = 3
+
+
+@dataclass(frozen=True)
+class TrendEntryQualifierConfig:
+    enabled: bool = False
+    min_edge_long: float = 0.02
+    min_edge_short: float = -0.02
+    min_prob_long: float = 0.30
+    min_prob_short: float = 0.30
+    position_ratio: float = 0.04
+    max_position_ratio: float = 0.05
+    open_bias_penalty: float = 0.85
+    relax_edge_mult: float = 0.65
+    relax_prob_delta: float = -0.04
+    require_best_point: bool = True
+    require_segment: bool = True
+    require_confirmed_leg: bool = True
+    block_long_in_crash: bool = True
+    stop_atr_mult: float = 2.0
+
+
+@dataclass(frozen=True)
+class RegimeThresholdConfig:
+    enabled: bool = False
+    apply_to_standard_opens: bool = True
+    apply_to_trend_qualified: bool = True
+    trend_confirmed_edge_mult: float = 0.65
+    trend_confirmed_prob_delta: float = -0.04
+    slow_up_edge_mult: float = 0.55
+    slow_up_prob_delta: float = -0.05
+    crash_edge_mult: float = 0.50
+    crash_prob_delta: float = -0.06
+
+
+@dataclass(frozen=True)
+class TrendHoldExtensionConfig:
+    enabled: bool = False
+    leg_progress_hold_boost_below: float = 0.5
+    hold_bias_boost_mult: float = 1.2
+    leg_progress_time_exit_above: float = 0.75
+    no_add_after_leg_progress_gt: float = 0.6
+
+
+@dataclass(frozen=True)
+class ParticipationFloorConfig:
+    enabled: bool = False
 
 
 @dataclass(frozen=True)
@@ -359,6 +411,10 @@ class TradingSystemConfig:
     trend_segment: TrendSegmentConfig = TrendSegmentConfig()
     best_point: BestPointConfig = BestPointConfig()
     trend_bias: TrendBiasConfig = TrendBiasConfig()
+    trend_entry_qualifier: TrendEntryQualifierConfig = TrendEntryQualifierConfig()
+    trend_hold_extension: TrendHoldExtensionConfig = TrendHoldExtensionConfig()
+    regime_threshold: RegimeThresholdConfig = RegimeThresholdConfig()
+    participation_floor: ParticipationFloorConfig = ParticipationFloorConfig()
 
 
 def _tuple2(v: list[float] | tuple[float, float], default: tuple[float, float]) -> tuple[float, float]:
@@ -389,6 +445,10 @@ def load_config(path: str | Path) -> TradingSystemConfig:
     slow_up_long_horizon_label_p = payload.get("slow_up_long_horizon_label", {})
     best_point_p = payload.get("best_point", {})
     trend_bias_p = payload.get("trend_bias", {})
+    trend_entry_qualifier_p = payload.get("trend_entry_qualifier", {})
+    trend_hold_extension_p = payload.get("trend_hold_extension", {})
+    regime_threshold_p = payload.get("regime_threshold", {})
+    participation_floor_p = payload.get("participation_floor", {})
     trend_segment_p = dict(payload.get("trend_segment", {}))
     changepoint_p = trend_segment_p.pop("changepoint", {})
     ts_defaults = {**TrendSegmentConfig().__dict__, **trend_segment_p}
@@ -435,5 +495,17 @@ def load_config(path: str | Path) -> TradingSystemConfig:
         trend_segment=trend_segment,
         best_point=BestPointConfig(**{**BestPointConfig().__dict__, **best_point_p}),
         trend_bias=TrendBiasConfig(**{**TrendBiasConfig().__dict__, **trend_bias_p}),
+        trend_entry_qualifier=TrendEntryQualifierConfig(
+            **{**TrendEntryQualifierConfig().__dict__, **trend_entry_qualifier_p}
+        ),
+        trend_hold_extension=TrendHoldExtensionConfig(
+            **{**TrendHoldExtensionConfig().__dict__, **trend_hold_extension_p}
+        ),
+        regime_threshold=RegimeThresholdConfig(
+            **{**RegimeThresholdConfig().__dict__, **regime_threshold_p}
+        ),
+        participation_floor=ParticipationFloorConfig(
+            **{**ParticipationFloorConfig().__dict__, **participation_floor_p}
+        ),
     )
 
