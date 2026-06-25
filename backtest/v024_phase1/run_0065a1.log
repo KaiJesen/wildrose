@@ -1,0 +1,35 @@
+/home/jack/00_workspace/02_python/transformer_kit/auto_segment_encoder.py:275: UserWarning: enable_nested_tensor is True, but self.use_nested_tensor is False because encoder_layer.norm_first was True
+  self.encoder = nn.TransformerEncoder(layer, num_layers=1)
+/home/jack/00_workspace/02_python/transformer_kit/segment_encoder.py:51: UserWarning: enable_nested_tensor is True, but self.use_nested_tensor is False because encoder_layer.norm_first was True
+  self.encoder = nn.TransformerEncoder(layer, num_layers=cfg.n_layers)
+/home/jack/00_workspace/02_python/transformer_kit/causal_transformer.py:44: UserWarning: enable_nested_tensor is True, but self.use_nested_tensor is False because encoder_layer.norm_first was True
+  self.encoder = nn.TransformerEncoder(layer, num_layers=cfg.n_layers)
+  load cached csv: data/cache/kline/binance_vision_BTCUSDT_1h_365d_end20260625.csv
+stride=1 λ_part=0.25 oversample=30.0 train_ideal_samples=14 valid_ideal_samples=7
+loaded init checkpoint: backtest/v024_phase1_tune/s1_os30_pw15/checkpoint/market_state_best.pt
+epoch 01 loss=0.6217 part_auc=0.5983 part_auc_long=0.6966 cum_ic=0.0592 score=0.6279 ic_gate=PASS
+epoch 02 loss=0.6173 part_auc=0.5977 part_auc_long=0.6953 cum_ic=0.0855 score=0.6404 ic_gate=PASS
+epoch 03 loss=0.6102 part_auc=0.5970 part_auc_long=0.6941 cum_ic=0.1020 score=0.6480 ic_gate=PASS
+epoch 04 loss=0.6077 part_auc=0.5717 part_auc_long=0.6435 cum_ic=0.0823 score=0.6129 ic_gate=PASS
+epoch 05 loss=0.6078 part_auc=0.5705 part_auc_long=0.6410 cum_ic=0.0649 score=0.6030 ic_gate=PASS
+epoch 06 loss=0.6002 part_auc=0.5869 part_auc_long=0.6738 cum_ic=0.0562 score=0.6150 ic_gate=PASS
+epoch 07 loss=0.5889 part_auc=0.6293 part_auc_long=0.7585 cum_ic=0.0887 score=0.6736 ic_gate=PASS
+epoch 08 loss=0.6027 part_auc=0.6261 part_auc_long=0.7522 cum_ic=0.0957 score=0.6740 ic_gate=PASS
+epoch 09 loss=0.6024 part_auc=0.6305 part_auc_long=0.7611 cum_ic=0.0850 score=0.6730 ic_gate=PASS
+epoch 10 loss=0.6009 part_auc=0.6331 part_auc_long=0.7661 cum_ic=0.0878 score=0.6770 ic_gate=PASS
+epoch 11 loss=0.6049 part_auc=0.6185 part_auc_long=0.7370 cum_ic=0.0687 score=0.6529 ic_gate=PASS
+epoch 12 loss=0.5894 part_auc=0.5926 part_auc_long=0.6852 cum_ic=0.0614 score=0.6233 ic_gate=PASS
+saved checkpoint: /home/jack/00_workspace/02_python/checkpoints/0065a_leg_align_v1/market_state_best.pt
+saved report: /home/jack/00_workspace/02_python/reports/0065a_leg_align_v1/metrics.json
+test participation_auc=0.7943 cum_return_ic=-0.0191
+/home/jack/00_workspace/02_python/transformer_kit/auto_segment_encoder.py:275: UserWarning: enable_nested_tensor is True, but self.use_nested_tensor is False because encoder_layer.norm_first was True
+  self.encoder = nn.TransformerEncoder(layer, num_layers=1)
+/home/jack/00_workspace/02_python/transformer_kit/segment_encoder.py:51: UserWarning: enable_nested_tensor is True, but self.use_nested_tensor is False because encoder_layer.norm_first was True
+  self.encoder = nn.TransformerEncoder(layer, num_layers=cfg.n_layers)
+/home/jack/00_workspace/02_python/transformer_kit/causal_transformer.py:44: UserWarning: enable_nested_tensor is True, but self.use_nested_tensor is False because encoder_layer.norm_first was True
+  self.encoder = nn.TransformerEncoder(layer, num_layers=cfg.n_layers)
+  load cached csv: data/cache/kline/binance_vision_BTCUSDT_1h_365d_end20260625.csv
+[valid] part_auc=0.7500 cum_ic=0.0744
+[test] part_auc=0.5000 cum_ic=-0.0169
+saved: backtest/v024_phase1/eval_model_participation_v1.json
++ /home/jack/.pyenv/versions/myproj/bin/python examples/train_market_state_0065a.py --variant 1 --init-checkpoint backtest/v024_phase1_tune/s1_os30_pw15/checkpoint/market_state_best.pt --epochs 12 --early-stop-patience 5 --batch-size 32

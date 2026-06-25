@@ -318,13 +318,14 @@ def main() -> int:
         )
         row = {"epoch": epoch, "train_loss": tr.loss, **{f"valid_{k}": v for k, v in valid_m.items()}}
         history.append(row)
-        score = valid_m["participation_auc"] + 0.5 * valid_m["cum_return_ic"]
+        score = valid_m["participation_auc"]
         ic_ok = baseline_ic <= 0 or valid_m["cum_return_ic"] >= baseline_ic * 0.95
         print(
             f"epoch {epoch:02d} loss={tr.loss:.4f} "
             f"part_auc={valid_m['participation_auc']:.4f} "
-        f"part_auc_long={valid_m.get('participation_auc_long', 0):.4f} "
-        f"cum_ic={valid_m['cum_return_ic']:.4f} "
+            f"part_auc_long={valid_m.get('participation_auc_long', 0):.4f} "
+            f"hz24_acc={valid_m.get('hz_direction_acc_24', 0):.4f} "
+            f"cum_ic={valid_m['cum_return_ic']:.4f} "
             f"score={score:.4f} ic_gate={'PASS' if ic_ok else 'FAIL'}"
         )
         if score > best_score and ic_ok:

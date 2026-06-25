@@ -1,43 +1,37 @@
-# 024 Phase 1 Report (0065a-0)
+# 024 Phase 1 Report
 
-- timestamp: `2026-06-25` (initial scaffold + 8-epoch run)
-- variant: `0` (participation BCE only)
-- checkpoint: `checkpoints/0065a_leg_align_v0/market_state_best.pt`
+- updated: 2026-06-25
 
-## Model-track valid (best epoch)
+## 0065a-0（参与 BCE）
 
-| metric | value | Phase 1 gate |
-|--------|-------|--------------|
-| participation_auc | 0.4583 | ≥ 0.55 **FAIL** |
-| cum_return_ic | -0.0277 (best epoch 6) | vs 0062e 退化 ≤5% **监控** |
-| confirmed_leg_flat_edge_p50_long | 待 eval json | 方向正确 |
+| 配置 | valid participation_auc | long AUC | gate ≥0.55 |
+|------|-------------------------|----------|------------|
+| stride=8 默认 | 0.458 | ~0.42 | FAIL |
+| stride=1, oversample=30, λ_part=1.5 | **0.611** | **0.722** | **PASS** |
 
-## Model-track test
+Checkpoint（本地，未入库）: `backtest/v024_phase1_tune/s1_os30_pw15/checkpoint/market_state_best.pt`
 
-| metric | value |
-|--------|-------|
-| participation_auc | 0.5000 |
-| cum_return_ic | 0.0145 |
+## 0065a-1（+ L_12/L_24）
 
-## 说明
+| metric | valid (best ep10) | test |
+|--------|-------------------|------|
+| participation_auc | **0.633** | 0.794 (train report) |
+| participation_auc_long | **0.766** | — |
+| hz_direction_acc_24 | 0.443 | — |
+| cum_return_ic | 0.088 | -0.019 |
 
-Phase 1 **工程骨架已就绪**（多头 + 损失 + 训练/评估脚本）。当前 8 epoch 初训未过 `participation_auc ≥ 0.55`，主因：
+Checkpoint（本地）: `checkpoints/0065a_leg_align_v1/market_state_best.pt`  
+Eval JSON: `backtest/v024_phase1/eval_model_participation_v1.json`
 
-1. ideal 正样本极稀疏（valid long rate ~0.8%）
-2. 需加长训练 / 调 `λ_part` / 正负采样策略后再评估
+## Phase 1 gate
+
+- participation_auc ≥ 0.55: **PASS**（v0 / v1）
+- 下一步: 0065a-2（+ L_leg_dir）→ Phase 2 校准
 
 ## 复现
 
 ```bash
-python examples/build_leg_participation_labels.py --split train --split valid --split test
-python examples/train_market_state_0065a.py --variant 0 --epochs 8
-python examples/eval_model_participation.py \
-  --checkpoint checkpoints/0065a_leg_align_v0/market_state_best.pt \
-  --output backtest/v024_phase1/eval_model_participation.json
+python examples/run_v024_phase1b_0065a1.py
+python examples/train_market_state_0065a.py --variant 2 \
+  --init-checkpoint checkpoints/0065a_leg_align_v1/market_state_best.pt
 ```
-
-## 下一步
-
-- 加长 0065a-0 训练或提高 `participation_weight`
-- valid `participation_auc ≥ 0.55` 后进入 0065a-1（+ L_24）
-- Phase 2 前勿接线 `teq_edge_*` 至 rules

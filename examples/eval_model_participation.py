@@ -274,7 +274,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--phase1c-backtest-root", default="backtest/v023_phase1c")
     p.add_argument("--checkpoint", default="")
     p.add_argument("--pred-horizon", type=int, default=5)
-    p.add_argument("--stride", type=int, default=8)
+    p.add_argument("--stride", type=int, default=1)
     p.add_argument("--trunk-layers", type=int, default=2)
     p.add_argument("--variant", default="0")
     p.add_argument("--output", default="backtest/v024_phase0/eval_model_participation.json")
