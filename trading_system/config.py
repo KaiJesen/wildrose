@@ -364,6 +364,17 @@ class ParticipationFloorConfig:
 
 
 @dataclass(frozen=True)
+class TeqEdgeConfig:
+    enabled: bool = False
+    weight_edge_5: float = 0.35
+    weight_edge_24: float = 0.45
+    weight_participation: float = 0.20
+    calibration_path: str = ""
+    use_calibrated: bool = True
+    model_checkpoint: str = ""
+
+
+@dataclass(frozen=True)
 class TrendBiasConfig:
     enabled: bool = True
     decision_scope: str = "observe"
@@ -415,6 +426,7 @@ class TradingSystemConfig:
     trend_hold_extension: TrendHoldExtensionConfig = TrendHoldExtensionConfig()
     regime_threshold: RegimeThresholdConfig = RegimeThresholdConfig()
     participation_floor: ParticipationFloorConfig = ParticipationFloorConfig()
+    teq_edge: TeqEdgeConfig = TeqEdgeConfig()
 
 
 def _tuple2(v: list[float] | tuple[float, float], default: tuple[float, float]) -> tuple[float, float]:
@@ -449,6 +461,7 @@ def load_config(path: str | Path) -> TradingSystemConfig:
     trend_hold_extension_p = payload.get("trend_hold_extension", {})
     regime_threshold_p = payload.get("regime_threshold", {})
     participation_floor_p = payload.get("participation_floor", {})
+    teq_edge_p = payload.get("teq_edge", {})
     trend_segment_p = dict(payload.get("trend_segment", {}))
     changepoint_p = trend_segment_p.pop("changepoint", {})
     ts_defaults = {**TrendSegmentConfig().__dict__, **trend_segment_p}
@@ -507,5 +520,6 @@ def load_config(path: str | Path) -> TradingSystemConfig:
         participation_floor=ParticipationFloorConfig(
             **{**ParticipationFloorConfig().__dict__, **participation_floor_p}
         ),
+        teq_edge=TeqEdgeConfig(**{**TeqEdgeConfig().__dict__, **teq_edge_p}),
     )
 

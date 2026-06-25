@@ -33,6 +33,12 @@ class TradingSignal:
     conf: float = 0.0
     cum_edge: float = 0.0
     risk_ok: bool = False
+    participate_score_long: float = 0.0
+    participate_score_short: float = 0.0
+    teq_edge_long: float = 0.0
+    teq_edge_short: float = 0.0
+    edge_long_hz: float = 0.0
+    edge_short_hz: float = 0.0
 
     def finalize(self, risk_open_max: float) -> "TradingSignal":
         if self.pred_cum_ret_5 is None:

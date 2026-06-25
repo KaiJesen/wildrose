@@ -38,7 +38,12 @@ from transformer_kit.pattern_model import KlinePatternPredictor, PatternPredicto
 from transformer_kit.schedulers import build_adamw_with_warmup_cosine_restarts
 from transformer_kit.segment_dataset import build_sequence_sample_indices
 from transformer_kit.train_utils import load_checkpoint, save_checkpoint
-from transformer_kit.training import evaluate_leg_align_market_state, train_leg_align_market_state_epoch
+from transformer_kit.training import (
+    collect_leg_align_head_params,
+    evaluate_leg_align_market_state,
+    freeze_legacy_market_state_heads,
+    train_leg_align_market_state_epoch,
+)
 
 PROD_CKPT = "prod/v0.0.0/checkpoint/market_state_best.pt"
 LABELS_DIR = "data/labels/leg_participation"
@@ -90,6 +95,13 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--participation-weight", type=float, default=-1.0, help="override ablation λ_part; <0 keeps variant default")
     p.add_argument("--positive-oversample", type=float, default=30.0, help="train sampler weight multiplier for ideal_participate=1")
     p.add_argument("--freeze-encoder", action="store_true", help="train participation heads only")
+    p.add_argument("--freeze-legacy-heads", action="store_true", help="freeze return/direction/risk/vol heads (0062e semantics)")
+    p.add_argument("--base-loss-scale", type=float, default=-1.0, help="scale market_state_loss; <0 uses constraint profile default")
+    p.add_argument("--drift-weight", type=float, default=-1.0, help="teacher KL+MSE drift; <0 uses constraint profile default")
+    p.add_argument("--constraint-profile", choices=["none", "constrained", "soft"], default="none")
+    p.add_argument("--auto-baseline-ic", action="store_true", help="measure init checkpoint valid cum_return_ic as drift gate")
+    p.add_argument("--cum-ic-min-ratio", type=float, default=0.95, help="valid cum_return_ic >= baseline * ratio")
+    p.add_argument("--early-stop-metric", choices=["participation_auc", "composite"], default="participation_auc")
     p.set_defaults(
         epochs=12,
         batch_size=64,
@@ -180,14 +192,53 @@ def _collect_future_windows(raw_log_ret: np.ndarray, samples) -> np.ndarray:
     return np.stack(rows, axis=0)
 
 
+CONSTRAINT_PROFILES = {
+    "none": {
+        "freeze_legacy_heads": False,
+        "freeze_encoder": False,
+        "base_loss_scale": 1.0,
+        "drift_weight": 0.0,
+    },
+    "constrained": {
+        "freeze_legacy_heads": True,
+        "freeze_encoder": True,
+        "base_loss_scale": 0.0,
+        "drift_weight": 0.0,
+    },
+    "soft": {
+        "freeze_legacy_heads": True,
+        "freeze_encoder": True,
+        "base_loss_scale": 0.15,
+        "drift_weight": 0.5,
+    },
+}
+
+
+def _resolve_constraint_args(args: argparse.Namespace) -> dict:
+    prof = CONSTRAINT_PROFILES[args.constraint_profile]
+    freeze_legacy = args.freeze_legacy_heads or prof["freeze_legacy_heads"]
+    freeze_encoder = args.freeze_encoder or prof["freeze_encoder"]
+    base_scale = prof["base_loss_scale"] if args.base_loss_scale < 0 else args.base_loss_scale
+    drift_w = prof["drift_weight"] if args.drift_weight < 0 else args.drift_weight
+    return {
+        "freeze_legacy_heads": freeze_legacy,
+        "freeze_encoder": freeze_encoder,
+        "base_loss_scale": base_scale,
+        "drift_weight": drift_w,
+    }
+
+
 def main() -> int:
     args = parse_args()
     apply_real_data_defaults(args)
     ab = ABLATION[args.variant]
+    cargs = _resolve_constraint_args(args)
     if not args.report_dir:
         args.report_dir = f"reports/0065a_leg_align_v{args.variant}"
     if args.checkpoint_dir == "checkpoints/0065a_leg_align_v0" and args.variant != "0":
         args.checkpoint_dir = f"checkpoints/0065a_leg_align_v{args.variant}"
+    if cargs["freeze_legacy_heads"] and ab["leg_dir_weight"] > 0:
+        print("warning: leg_dir_weight>0 with freeze_legacy_heads; direction head will not train")
 
     device = torch.device(args.device if torch.cuda.is_available() and args.device != "cpu" else "cpu")
     labels_dir = Path(args.labels_dir)
@@ -215,6 +266,8 @@ def main() -> int:
     valid_pos = _count_ideal_samples(valid_samples, valid_labels)
     print(
         f"stride={args.stride} λ_part={part_w} oversample={args.positive_oversample} "
+        f"profile={args.constraint_profile} base_scale={cargs['base_loss_scale']} "
+        f"freeze_legacy={cargs['freeze_legacy_heads']} drift={cargs['drift_weight']} "
         f"train_ideal_samples={train_pos} valid_ideal_samples={valid_pos}"
     )
 
@@ -244,32 +297,64 @@ def main() -> int:
     ).to(device)
 
     init_ckpt = Path(args.init_checkpoint)
+    teacher: KlinePatternPredictor | None = None
     if init_ckpt.is_file():
         ck = load_checkpoint(init_ckpt, map_location=device)
         model.load_state_dict(ck["model"], strict=False)
         print(f"loaded init checkpoint: {init_ckpt}")
-        if args.baseline_cum_return_ic <= 0 and isinstance(ck.get("args"), dict):
-            pass
+        if cargs["drift_weight"] > 0:
+            teacher = KlinePatternPredictor(
+                PatternPredictorConfig(
+                    auto_segment=auto_cfg,
+                    trunk=CausalTransformerConfig(d_model=args.d_model, n_heads=args.n_heads, n_layers=args.trunk_layers),
+                    pred_horizon=args.pred_horizon,
+                    pred_feat_dim=1,
+                    pool_mode="attn",
+                    learnable_scale=True,
+                    use_horizon_head=False,
+                    use_market_state_head=True,
+                    use_cum_heads=True,
+                    use_horizon_return_head=True,
+                    use_participation_heads=True,
+                    leg_align_horizons=ab["leg_align_horizons"],
+                )
+            ).to(device)
+            teacher.load_state_dict(ck["model"], strict=False)
+            teacher.eval()
+            for p in teacher.parameters():
+                p.requires_grad = False
+            print("loaded frozen teacher for drift regularization")
+
+    if cargs["freeze_legacy_heads"]:
+        n_frozen = freeze_legacy_market_state_heads(model)
+        print(f"frozen legacy market-state head tensors: {n_frozen}")
 
     enc_params = list(model.auto_encoder.parameters())
     trunk_params = list(model.trunk.parameters())
     enc_ids = {id(p) for p in enc_params} | {id(p) for p in trunk_params}
     head_params = [p for p in model.parameters() if id(p) not in enc_ids]
-    if args.freeze_encoder:
+    leg_only_params = collect_leg_align_head_params(model)
+    if cargs["freeze_encoder"]:
         for p in enc_params:
             p.requires_grad = False
         for p in trunk_params:
             p.requires_grad = False
-        opt, sched = build_adamw_with_warmup_cosine_restarts(
-            [{"params": head_params, "lr": args.lr}],
-            lr=args.lr,
-            weight_decay=args.weight_decay,
-            warmup_steps=args.warmup_steps,
-            t0=args.cosine_t0,
-            t_mult=args.cosine_t_mult,
-            eta_min=args.eta_min,
-        )
-        print("encoder+trunk frozen; training participation/aux heads only")
+    train_params = leg_only_params if cargs["freeze_legacy_heads"] else head_params
+    if not train_params:
+        raise RuntimeError("no trainable parameters after constraint profile")
+    opt, sched = build_adamw_with_warmup_cosine_restarts(
+        [{"params": train_params, "lr": args.lr}],
+        lr=args.lr,
+        weight_decay=args.weight_decay,
+        warmup_steps=args.warmup_steps,
+        t0=args.cosine_t0,
+        t_mult=args.cosine_t_mult,
+        eta_min=args.eta_min,
+    )
+    if cargs["freeze_encoder"]:
+        print(f"encoder+trunk frozen; training {len(train_params)} leg-align tensors")
+    elif cargs["freeze_legacy_heads"]:
+        print(f"legacy heads frozen; training {len(train_params)} leg-align tensors")
     else:
         opt, sched = build_adamw_with_warmup_cosine_restarts(
             [{"params": enc_params, "lr": args.lr * args.encoder_lr_scale}, {"params": head_params, "lr": args.lr}],
@@ -281,6 +366,15 @@ def main() -> int:
             eta_min=args.eta_min,
         )
 
+    baseline_ic = float(args.baseline_cum_return_ic)
+    baseline_dir_acc = 0.0
+    if args.auto_baseline_ic or baseline_ic <= 0:
+        init_metrics = evaluate_leg_align_market_state(model, valid_loader, device)
+        if baseline_ic <= 0:
+            baseline_ic = float(init_metrics.get("cum_return_ic", 0.0))
+        baseline_dir_acc = float(init_metrics.get("direction_acc", 0.0))
+        print(f"init valid baseline cum_return_ic={baseline_ic:.4f} direction_acc={baseline_dir_acc:.4f}")
+
     ckpt_dir = Path(args.checkpoint_dir).resolve()
     ckpt_dir.mkdir(parents=True, exist_ok=True)
     report_dir = Path(args.report_dir).resolve()
@@ -290,7 +384,7 @@ def main() -> int:
     best_epoch = -1
     stale = 0
     history: list[dict] = []
-    baseline_ic = float(args.baseline_cum_return_ic)
+    ic_floor = baseline_ic * args.cum_ic_min_ratio if baseline_ic > 0 else -1e9
 
     for epoch in range(1, args.epochs + 1):
         tr = train_leg_align_market_state_epoch(
@@ -305,6 +399,10 @@ def main() -> int:
             hz_24_weight=ab["hz_24_weight"],
             hz_48_weight=ab["hz_48_weight"],
             leg_dir_weight=ab["leg_dir_weight"],
+            base_loss_scale=cargs["base_loss_scale"],
+            drift_weight=cargs["drift_weight"],
+            teacher=teacher,
+            encoder_aux_loss=not cargs["freeze_encoder"],
         )
         valid_m = evaluate_leg_align_market_state(
             model,
@@ -317,15 +415,23 @@ def main() -> int:
             leg_dir_weight=ab["leg_dir_weight"],
         )
         row = {"epoch": epoch, "train_loss": tr.loss, **{f"valid_{k}": v for k, v in valid_m.items()}}
+        if tr.extras:
+            row.update({f"train_{k}": v for k, v in tr.extras.items()})
         history.append(row)
-        score = valid_m["participation_auc"]
-        ic_ok = baseline_ic <= 0 or valid_m["cum_return_ic"] >= baseline_ic * 0.95
+        part_score = valid_m["participation_auc"]
+        ic_ok = baseline_ic <= 0 or valid_m["cum_return_ic"] >= ic_floor
+        dir_drift = abs(valid_m.get("direction_acc", 0.0) - baseline_dir_acc)
+        if args.early_stop_metric == "composite":
+            score = part_score - 0.5 * max(0.0, ic_floor - valid_m["cum_return_ic"]) - 0.1 * dir_drift
+        else:
+            score = part_score
         print(
             f"epoch {epoch:02d} loss={tr.loss:.4f} "
             f"part_auc={valid_m['participation_auc']:.4f} "
             f"part_auc_long={valid_m.get('participation_auc_long', 0):.4f} "
             f"hz24_acc={valid_m.get('hz_direction_acc_24', 0):.4f} "
             f"cum_ic={valid_m['cum_return_ic']:.4f} "
+            f"dir_acc={valid_m.get('direction_acc', 0):.4f} "
             f"score={score:.4f} ic_gate={'PASS' if ic_ok else 'FAIL'}"
         )
         if score > best_score and ic_ok:
@@ -334,7 +440,14 @@ def main() -> int:
             stale = 0
             save_checkpoint(
                 ckpt_dir / "market_state_best.pt",
-                {"model": model.state_dict(), "args": vars(args), "metrics": valid_m},
+                {
+                    "model": model.state_dict(),
+                    "args": vars(args),
+                    "metrics": valid_m,
+                    "constraint": cargs,
+                    "baseline_cum_return_ic": baseline_ic,
+                    "baseline_direction_acc": baseline_dir_acc,
+                },
             )
         else:
             stale += 1
@@ -352,11 +465,20 @@ def main() -> int:
         "variant": args.variant,
         "best_epoch": best_epoch,
         "valid_best_score": best_score,
+        "constraint_profile": args.constraint_profile,
+        "constraint": cargs,
+        "baseline_cum_return_ic": baseline_ic,
+        "baseline_direction_acc": baseline_dir_acc,
         "ablation": {**ab, "participation_weight": part_w},
         "tuning": {
             "stride": args.stride,
             "positive_oversample": args.positive_oversample,
-            "freeze_encoder": args.freeze_encoder,
+            "freeze_encoder": cargs["freeze_encoder"],
+            "freeze_legacy_heads": cargs["freeze_legacy_heads"],
+            "base_loss_scale": cargs["base_loss_scale"],
+            "drift_weight": cargs["drift_weight"],
+            "cum_ic_min_ratio": args.cum_ic_min_ratio,
+            "early_stop_metric": args.early_stop_metric,
             "train_ideal_samples": train_pos,
             "valid_ideal_samples": valid_pos,
         },

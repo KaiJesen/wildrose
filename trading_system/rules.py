@@ -174,8 +174,9 @@ class RuleEngine:
                 trend_bias, qualification, side="long",
                 trend_signal=trend_signal, slow_context=slow_context, crash_context=crash_context,
             )
+            teq_edge = signal.teq_edge_long if self.cfg.teq_edge.enabled else signal.edge
             if not (
-                signal.edge >= eff_edge
+                teq_edge >= eff_edge
                 and signal.p_up >= eff_prob
                 and signal.p_flat <= self.cfg.rule.open_flat_max
                 and signal.risk_ok
@@ -198,8 +199,9 @@ class RuleEngine:
             trend_bias, qualification, side="short",
             trend_signal=trend_signal, slow_context=slow_context, crash_context=crash_context,
         )
+        teq_edge = signal.teq_edge_short if self.cfg.teq_edge.enabled else signal.edge
         if not (
-            signal.edge <= -eff_edge
+            teq_edge <= -eff_edge
             and signal.p_down >= eff_prob
             and signal.p_flat <= self.cfg.rule.open_flat_max
             and signal.risk_ok

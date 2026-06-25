@@ -1064,6 +1064,66 @@ def train_market_state_epoch(
     return TrainStepResult(loss=total / max(1, n), lr=optimizer.param_groups[0]["lr"], extras={})
 
 
+def freeze_legacy_market_state_heads(model: nn.Module) -> int:
+    """Stop gradient updates on 0062e legacy heads (return/direction/risk/vol)."""
+    msh = getattr(model, "market_state_head", None)
+    if msh is None:
+        return 0
+    frozen = 0
+    for attr in (
+        "return_head",
+        "horizon_return_head",
+        "direction_state_head",
+        "volatility_head",
+        "risk_head",
+    ):
+        sub = getattr(msh, attr, None)
+        if sub is None:
+            continue
+        for p in sub.parameters():
+            if p.requires_grad:
+                p.requires_grad = False
+                frozen += 1
+    return frozen
+
+
+def collect_leg_align_head_params(model: nn.Module) -> list[nn.Parameter]:
+    """Trainable params for participation + hz heads only."""
+    msh = getattr(model, "market_state_head", None)
+    if msh is None:
+        return []
+    params: list[nn.Parameter] = []
+    for attr in ("participation_logit_long", "participation_logit_short", "hz_return_heads"):
+        sub = getattr(msh, attr, None)
+        if sub is None:
+            continue
+        params.extend([p for p in sub.parameters() if p.requires_grad])
+    return params
+
+
+def market_state_teacher_drift_loss(
+    student: MarketStateOutput,
+    teacher: MarketStateOutput,
+    *,
+    direction_weight: float = 1.0,
+    cum_return_weight: float = 1.0,
+) -> tuple[torch.Tensor, dict[str, float]]:
+    zero = student.direction_logits.new_zeros(())
+    parts = {"drift_direction_kl": 0.0, "drift_cum_return_mse": 0.0}
+    total = zero
+    if direction_weight > 0:
+        s_log = F.log_softmax(student.direction_logits[:, 0, :], dim=-1)
+        t_prob = F.softmax(teacher.direction_logits[:, 0, :].detach(), dim=-1)
+        dir_kl = F.kl_div(s_log, t_prob, reduction="batchmean")
+        parts["drift_direction_kl"] = float(dir_kl.detach())
+        total = total + direction_weight * dir_kl
+    if cum_return_weight > 0 and student.cum_return_pred is not None and teacher.cum_return_pred is not None:
+        cum_mse = F.mse_loss(student.cum_return_pred, teacher.cum_return_pred.detach())
+        parts["drift_cum_return_mse"] = float(cum_mse.detach())
+        total = total + cum_return_weight * cum_mse
+    return total, parts
+
+
 def _masked_weighted_bce(
     logits: torch.Tensor,
     targets: torch.Tensor,
@@ -1071,7 +1131,7 @@ def _masked_weighted_bce(
     weights: torch.Tensor,
 ) -> torch.Tensor:
     if mask.sum() < 1:
-        return logits.new_zeros(())
+        return logits.sum() * 0.0
     loss = F.binary_cross_entropy_with_logits(logits, targets, reduction="none")
     w = weights * mask.float()
     return (loss * w).sum() / w.sum().clamp(min=1e-6)
@@ -1088,7 +1148,12 @@ def leg_align_aux_loss(
     hz_48_weight: float = 0.0,
     leg_dir_weight: float = 0.0,
 ) -> tuple[torch.Tensor, dict[str, float]]:
-    zero = torch.zeros((), device=device)
+    anchor = (
+        output.participation_logit_long
+        if output.participation_logit_long is not None
+        else output.return_pred[:, 0, 0]
+    )
+    zero = anchor.sum() * 0.0
     parts: dict[str, float] = {
         "participation_loss": 0.0,
         "hz_12_loss": 0.0,
@@ -1290,10 +1355,17 @@ def train_leg_align_market_state_epoch(
     hz_24_weight: float = 0.0,
     hz_48_weight: float = 0.0,
     leg_dir_weight: float = 0.0,
+    base_loss_scale: float = 1.0,
+    drift_weight: float = 0.0,
+    drift_direction_weight: float = 1.0,
+    drift_cum_return_weight: float = 1.0,
+    teacher: nn.Module | None = None,
+    encoder_aux_loss: bool = True,
 ) -> TrainStepResult:
     model.train()
     total = 0.0
     n = 0
+    drift_parts_sum = {"drift_direction_kl": 0.0, "drift_cum_return_mse": 0.0}
     for batch in loader:
         ctx = batch["ctx_bars"].to(device)
         ctx_len = batch["ctx_lengths"].to(device)
@@ -1307,17 +1379,6 @@ def train_leg_align_market_state_epoch(
         out = model(ctx, ctx_len)
         if not isinstance(out, MarketStateOutput):
             raise RuntimeError("model must return MarketStateOutput")
-        loss, _ = market_state_loss(
-            out,
-            tgt,
-            return_weight=return_weight,
-            direction_weight=direction_weight,
-            volatility_weight=volatility_weight,
-            risk_weight=risk_weight,
-            cum_return_weight=cum_return_weight,
-            cum_direction_head_weight=cum_direction_head_weight,
-            return_consistency_weight=return_consistency_weight,
-        )
         aux_loss, _ = leg_align_aux_loss(
             out,
             batch,
@@ -1328,8 +1389,38 @@ def train_leg_align_market_state_epoch(
             hz_48_weight=hz_48_weight,
             leg_dir_weight=leg_dir_weight,
         )
+        loss = aux_loss
+        if base_loss_scale > 0:
+            base_loss, _ = market_state_loss(
+                out,
+                tgt,
+                return_weight=return_weight,
+                direction_weight=direction_weight,
+                volatility_weight=volatility_weight,
+                risk_weight=risk_weight,
+                cum_return_weight=cum_return_weight,
+                cum_direction_head_weight=cum_direction_head_weight,
+                return_consistency_weight=return_consistency_weight,
+            )
+            loss = loss + base_loss_scale * base_loss
+        if drift_weight > 0 and teacher is not None:
+            with torch.no_grad():
+                t_out = teacher(ctx, ctx_len)
+            if isinstance(t_out, MarketStateOutput):
+                drift_loss, drift_parts = market_state_teacher_drift_loss(
+                    out,
+                    t_out,
+                    direction_weight=drift_direction_weight,
+                    cum_return_weight=drift_cum_return_weight,
+                )
+                loss = loss + drift_weight * drift_loss
+                for k, v in drift_parts.items():
+                    drift_parts_sum[k] += v
         aux = out.aux
-        loss = loss + aux_loss + 0.08 * aux["vq_loss"] + 0.04 * aux["break_reg_loss"]
+        if encoder_aux_loss:
+            loss = loss + 0.08 * aux["vq_loss"] + 0.04 * aux["break_reg_loss"]
+        if not loss.requires_grad:
+            continue
         loss.backward()
         _maybe_clip(model, grad_clip)
         optimizer.step()
@@ -1338,4 +1429,5 @@ def train_leg_align_market_state_epoch(
         bs = ctx.size(0)
         total += float(loss.item()) * bs
         n += bs
-    return TrainStepResult(loss=total / max(1, n), lr=optimizer.param_groups[0]["lr"], extras={})
+    extras = {k: v / max(1, len(loader)) for k, v in drift_parts_sum.items()}
+    return TrainStepResult(loss=total / max(1, n), lr=optimizer.param_groups[0]["lr"], extras=extras)
