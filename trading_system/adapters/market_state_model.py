@@ -15,6 +15,11 @@ from transformer_kit.pattern_model import KlinePatternPredictor, MarketStateOutp
 from transformer_kit.train_utils import load_checkpoint
 from trading_system.config import TradingSystemConfig
 from trading_system.signal import TradingSignal
+from trading_system.channel_edge import (
+    ChannelEdgeCalibrator,
+    apply_channel_calibration,
+    compute_channel_edge_raw,
+)
 from trading_system.teq_edge import (
     TeqEdgeCalibrator,
     apply_teq_calibration,
@@ -62,6 +67,7 @@ class ModelSignalProvider:
     cfg: TradingSystemConfig
     device: torch.device
     teq_calibrator: TeqEdgeCalibrator | None = None
+    channel_calibrator: ChannelEdgeCalibrator | None = None
 
     @classmethod
     def from_checkpoint(
@@ -149,6 +155,14 @@ class ModelSignalProvider:
             cal_path = Path(teq_cfg.calibration_path)
             if cal_path.is_file():
                 calibrator = TeqEdgeCalibrator.load(cal_path)
+        channel_calibrator = None
+        ch_cfg = cfg.participation_channel
+        if ch_cfg.enabled and ch_cfg.slow_up_gate.enabled:
+            gate = ch_cfg.slow_up_gate
+            if gate.use_calibrated and gate.calibration_path:
+                ch_path = Path(gate.calibration_path)
+                if ch_path.is_file():
+                    channel_calibrator = ChannelEdgeCalibrator.load(ch_path)
         return cls(
             model=model,
             bars=bars,
@@ -159,6 +173,7 @@ class ModelSignalProvider:
             cfg=cfg,
             device=torch.device(device),
             teq_calibrator=calibrator,
+            channel_calibrator=channel_calibrator,
         )
 
     def _attach_teq_fields(self, sig: TradingSignal, out: MarketStateOutput) -> None:
@@ -191,6 +206,8 @@ class ModelSignalProvider:
         if not teq_cfg.enabled:
             sig.teq_edge_long = sig.edge
             sig.teq_edge_short = -sig.edge
+            sig.raw["teq_edge_long_raw"] = sig.edge
+            sig.raw["teq_edge_short_raw"] = -sig.edge
             return
 
         teq_long_raw, teq_short_raw = compute_teq_edge_raw(
@@ -208,6 +225,35 @@ class ModelSignalProvider:
         )
         sig.teq_edge_long = teq_long
         sig.teq_edge_short = teq_short
+        sig.raw["teq_edge_long_raw"] = teq_long_raw
+        sig.raw["teq_edge_short_raw"] = teq_short_raw
+
+    def _attach_channel_edges(self, sig: TradingSignal) -> None:
+        ch_cfg = self.cfg.participation_channel
+        if not ch_cfg.enabled:
+            return
+        gate = ch_cfg.slow_up_gate
+        teq_long_raw = float(sig.raw.get("teq_edge_long_raw", sig.teq_edge_long))
+        teq_short_raw = float(sig.raw.get("teq_edge_short_raw", sig.teq_edge_short))
+        slow_long_raw, slow_short_raw = compute_channel_edge_raw(
+            legacy_edge=sig.edge,
+            teq_edge_long_raw=teq_long_raw,
+            teq_edge_short_raw=teq_short_raw,
+            participate_score_long=sig.participate_score_long,
+            participate_score_short=sig.participate_score_short,
+            cfg=gate,
+        )
+        sig.effective_edge_long_diag = slow_long_raw
+        sig.effective_edge_short_diag = slow_short_raw
+        if gate.enabled:
+            slow_long, slow_short = apply_channel_calibration(
+                slow_long_raw,
+                slow_short_raw,
+                calibrator=self.channel_calibrator,
+                use_calibrated=gate.use_calibrated,
+            )
+            sig.slow_up_edge_long = slow_long
+            sig.slow_up_edge_short = slow_short
 
     @torch.no_grad()
     def signal_at(self, idx: int) -> TradingSignal:
@@ -242,4 +288,5 @@ class ModelSignalProvider:
         )
         sig = sig.finalize(self.cfg.rule.risk_open_max)
         self._attach_teq_fields(sig, out)
+        self._attach_channel_edges(sig)
         return sig

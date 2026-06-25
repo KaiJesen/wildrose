@@ -53,6 +53,15 @@ class TradeLogger:
         tb = trend_bias
         rb = risk_budget
         teq = trend_entry_qualification
+        diag = action.diagnostics or {}
+        edge_source = str(diag.get("edge_source", ""))
+        if not edge_source and action.action.value == "OPEN":
+            if "TREND_QUALIFIED" in action.reason_code:
+                edge_source = "teq"
+            elif "SLOW_TREND" in action.reason_code:
+                edge_source = "slow_up"
+            elif action.reason_code.startswith("OPEN_"):
+                edge_source = "legacy"
         self.decisions.append(
             {
                 "ts": signal.ts,
@@ -186,6 +195,16 @@ class TradeLogger:
                 "teq_relax_edge_mult": teq.relax_edge_mult if teq else 0.0,
                 "teq_relax_prob_delta": teq.relax_prob_delta if teq else 0.0,
                 "teq_reason_codes": "|".join(teq.reason_codes) if teq else "",
+                "participate_score_long": signal.participate_score_long,
+                "participate_score_short": signal.participate_score_short,
+                "teq_edge_long": signal.teq_edge_long,
+                "teq_edge_short": signal.teq_edge_short,
+                "slow_up_edge_long": signal.slow_up_edge_long,
+                "slow_up_edge_short": signal.slow_up_edge_short,
+                "effective_edge_long_diag": signal.effective_edge_long_diag,
+                "effective_edge_short_diag": signal.effective_edge_short_diag,
+                "edge_source": edge_source,
+                "channel_threshold_snapshot": float(diag.get("channel_threshold_snapshot", 0.0)),
             }
         )
 

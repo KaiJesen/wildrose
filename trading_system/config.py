@@ -364,6 +364,25 @@ class ParticipationFloorConfig:
 
 
 @dataclass(frozen=True)
+class SlowUpParticipationGateConfig:
+    enabled: bool = False
+    tau_slow: float = 0.55
+    edge_threshold_slow: float = 0.0
+    probe_ratio: float = 0.5
+    weight_legacy: float = 0.6
+    weight_teq: float = 0.25
+    weight_part: float = 0.15
+    calibration_path: str = ""
+    use_calibrated: bool = True
+
+
+@dataclass(frozen=True)
+class ParticipationChannelConfig:
+    enabled: bool = False
+    slow_up_gate: SlowUpParticipationGateConfig = SlowUpParticipationGateConfig()
+
+
+@dataclass(frozen=True)
 class TeqEdgeConfig:
     enabled: bool = False
     weight_edge_5: float = 0.35
@@ -426,6 +445,7 @@ class TradingSystemConfig:
     trend_hold_extension: TrendHoldExtensionConfig = TrendHoldExtensionConfig()
     regime_threshold: RegimeThresholdConfig = RegimeThresholdConfig()
     participation_floor: ParticipationFloorConfig = ParticipationFloorConfig()
+    participation_channel: ParticipationChannelConfig = ParticipationChannelConfig()
     teq_edge: TeqEdgeConfig = TeqEdgeConfig()
 
 
@@ -461,6 +481,8 @@ def load_config(path: str | Path) -> TradingSystemConfig:
     trend_hold_extension_p = payload.get("trend_hold_extension", {})
     regime_threshold_p = payload.get("regime_threshold", {})
     participation_floor_p = payload.get("participation_floor", {})
+    participation_channel_p = payload.get("participation_channel", {})
+    slow_up_gate_p = participation_channel_p.get("slow_up_gate", {})
     teq_edge_p = payload.get("teq_edge", {})
     trend_segment_p = dict(payload.get("trend_segment", {}))
     changepoint_p = trend_segment_p.pop("changepoint", {})
@@ -519,6 +541,12 @@ def load_config(path: str | Path) -> TradingSystemConfig:
         ),
         participation_floor=ParticipationFloorConfig(
             **{**ParticipationFloorConfig().__dict__, **participation_floor_p}
+        ),
+        participation_channel=ParticipationChannelConfig(
+            enabled=bool(participation_channel_p.get("enabled", False)),
+            slow_up_gate=SlowUpParticipationGateConfig(
+                **{**SlowUpParticipationGateConfig().__dict__, **slow_up_gate_p}
+            ),
         ),
         teq_edge=TeqEdgeConfig(**{**TeqEdgeConfig().__dict__, **teq_edge_p}),
     )

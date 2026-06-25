@@ -39,6 +39,12 @@ class TradingSignal:
     teq_edge_short: float = 0.0
     edge_long_hz: float = 0.0
     edge_short_hz: float = 0.0
+    effective_edge_long_diag: float = 0.0
+    effective_edge_short_diag: float = 0.0
+    slow_up_edge_long: float = 0.0
+    slow_up_edge_short: float = 0.0
+    std_trend_edge_long: float = 0.0
+    std_trend_edge_short: float = 0.0
 
     def finalize(self, risk_open_max: float) -> "TradingSignal":
         if self.pred_cum_ret_5 is None:

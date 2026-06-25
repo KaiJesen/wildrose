@@ -191,7 +191,12 @@ class RuleEngine:
                 ActionType.OPEN_LONG,
                 Side.LONG,
                 "OPEN_LONG_TREND_QUALIFIED",
-                diagnostics={"entry_tier": qualification.entry_tier, "teq_reasons": qualification.reason_codes},
+                diagnostics={
+                    "entry_tier": qualification.entry_tier,
+                    "teq_reasons": qualification.reason_codes,
+                    "edge_source": "teq",
+                    "channel_threshold_snapshot": self.cfg.teq_edge.weight_participation,
+                },
             )
         if not qualification.allow_trend_entry_short:
             return None
@@ -216,7 +221,12 @@ class RuleEngine:
             ActionType.OPEN_SHORT,
             Side.SHORT,
             "OPEN_SHORT_TREND_QUALIFIED",
-            diagnostics={"entry_tier": qualification.entry_tier, "teq_reasons": qualification.reason_codes},
+            diagnostics={
+                "entry_tier": qualification.entry_tier,
+                "teq_reasons": qualification.reason_codes,
+                "edge_source": "teq",
+                "channel_threshold_snapshot": self.cfg.teq_edge.weight_participation,
+            },
         )
 
     def _bias_open_gate(
@@ -319,6 +329,18 @@ class RuleEngine:
             and signal.pred_cum_ret_5 <= 0.0
         )
 
+    def _slow_up_open_diagnostics(self, sc: SlowTrendContext | None, *, watch_probe: bool = False, extra: dict | None = None) -> dict:
+        gate = self.cfg.participation_channel.slow_up_gate
+        diag: dict = {
+            "stable_slow_up": True,
+            "slow_up_score": sc.slow_up_score if sc else 0.0,
+            "edge_source": "slow_up",
+            "channel_threshold_snapshot": gate.tau_slow if gate.enabled else 0.0,
+        }
+        if extra:
+            diag.update(extra)
+        return diag
+
     def _model_opposes_slow_up(self, signal: TradingSignal) -> bool:
         sp = self.cfg.slow_up_position
         return (
@@ -362,6 +384,12 @@ class RuleEngine:
             return False
         if self._model_opposes_slow_up(signal):
             return False
+        gate = self.cfg.participation_channel.slow_up_gate
+        if self.cfg.participation_channel.enabled and gate.enabled:
+            edge_ok = gate.edge_threshold_slow > 0 and signal.slow_up_edge_long >= gate.edge_threshold_slow
+            part_ok = signal.participate_score_long >= gate.tau_slow
+            if not (edge_ok or part_ok):
+                return False
         if not watch_probe and signal.pred_cum_ret_5 < 0.0:
             return False
         if watch_probe:
@@ -703,7 +731,7 @@ class RuleEngine:
                     ActionType.OPEN_LONG,
                     Side.LONG,
                     "OPEN_LONG_SLOW_TREND",
-                    diagnostics={"stable_slow_up": True, "slow_up_score": sc.slow_up_score if sc else 0.0},
+                    diagnostics=self._slow_up_open_diagnostics(sc),
                 )
             if sc and sc.is_slow_uptrend and not standard_long:
                 if sc.is_stable_slow_uptrend:
@@ -725,12 +753,11 @@ class RuleEngine:
                         ActionType.OPEN_LONG,
                         Side.LONG,
                         "OPEN_LONG_SLOW_TREND",
-                        diagnostics={
-                            "stable_slow_up": True,
-                            "slow_up_score": sc.slow_up_score,
-                            "watch_probe": True,
-                            "watch_streak": watch_streak,
-                        },
+                        diagnostics=self._slow_up_open_diagnostics(
+                            sc,
+                            watch_probe=True,
+                            extra={"watch_probe": True, "watch_streak": watch_streak},
+                        ),
                     )
                 return TradingAction(
                     ActionType.HOLD,

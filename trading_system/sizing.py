@@ -142,6 +142,9 @@ class PositionSizer:
                 slow_ratio = sp.stable_position_ratio
                 if slow_context is not None and not slow_context.is_stable_slow_uptrend:
                     slow_ratio = sp.position_ratio
+                gate = self.cfg.participation_channel.slow_up_gate
+                if self.cfg.participation_channel.enabled and gate.enabled:
+                    slow_ratio *= gate.probe_ratio
                 new_ratio = min(self.cfg.base.max_position_ratio, min(slow_ratio, sp.max_position_ratio))
             elif action.reason_code in ("OPEN_LONG_TREND_QUALIFIED", "OPEN_SHORT_TREND_QUALIFIED"):
                 tq = self.cfg.trend_entry_qualifier
