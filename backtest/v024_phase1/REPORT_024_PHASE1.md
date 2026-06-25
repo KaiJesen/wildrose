@@ -23,6 +23,18 @@ Checkpoint（本地，未入库）: `backtest/v024_phase1_tune/s1_os30_pw15/chec
 Checkpoint（本地）: `checkpoints/0065a_leg_align_v1/market_state_best.pt`  
 Eval JSON: `backtest/v024_phase1/eval_model_participation_v1.json`
 
+## 0065a-2（+ L_leg_dir）
+
+| metric | valid (best ep1) | notes |
+|--------|------------------|-------|
+| participation_auc | **0.622** | PASS |
+| participation_auc_long | **0.745** | |
+| hz_direction_acc_24 | **0.586** | vs v1 0.443 ↑ |
+
+Checkpoint（本地）: `checkpoints/0065a_leg_align_v2/market_state_best.pt`
+
+**Phase 1 ablation 完成** → 进入 Phase 2（valid 校准 + `teq_edge_*` 接线，不改全局 `edge`）
+
 ## Phase 1 gate
 
 - participation_auc ≥ 0.55: **PASS**（v0 / v1）
