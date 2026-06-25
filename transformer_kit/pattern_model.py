@@ -35,6 +35,8 @@ class PatternPredictorConfig:
     use_horizon_return_head: bool = False
     detach_risk_vol_heads: bool = False
     return_direction_hidden_mult: float = 1.0
+    use_participation_heads: bool = False
+    leg_align_horizons: tuple[int, ...] = ()
 
 
 @dataclass
@@ -46,6 +48,9 @@ class MarketStateOutput:
     aux: dict[str, torch.Tensor]
     cum_return_pred: torch.Tensor | None = None
     cum_direction_logit: torch.Tensor | None = None
+    participation_logit_long: torch.Tensor | None = None
+    participation_logit_short: torch.Tensor | None = None
+    hz_return_pred: dict[int, torch.Tensor] | None = None
 
 
 class SegmentAttentionPool(nn.Module):
@@ -105,6 +110,8 @@ class MarketStateHead(nn.Module):
         use_horizon_return_head: bool = False,
         detach_risk_vol_heads: bool = False,
         return_direction_hidden_mult: float = 1.0,
+        use_participation_heads: bool = False,
+        leg_align_horizons: tuple[int, ...] = (12, 24, 48),
     ) -> None:
         super().__init__()
         self.horizon = horizon
@@ -113,6 +120,8 @@ class MarketStateHead(nn.Module):
         self.use_cum_heads = use_cum_heads
         self.use_horizon_return_head = use_horizon_return_head
         self.detach_risk_vol_heads = detach_risk_vol_heads
+        self.use_participation_heads = use_participation_heads
+        self.leg_align_horizons = tuple(leg_align_horizons)
         hidden = max(8, int(d_model * return_direction_hidden_mult))
         self.return_head = nn.Sequential(
             nn.Linear(d_model, hidden),
@@ -140,6 +149,39 @@ class MarketStateHead(nn.Module):
             nn.GELU(),
             nn.Linear(d_model // 2, horizon * risk_classes),
         )
+        part_hidden = max(8, d_model // 2)
+        self.participation_logit_long = (
+            nn.Sequential(
+                nn.Linear(d_model, part_hidden),
+                nn.GELU(),
+                nn.Linear(part_hidden, 1),
+            )
+            if use_participation_heads
+            else None
+        )
+        self.participation_logit_short = (
+            nn.Sequential(
+                nn.Linear(d_model, part_hidden),
+                nn.GELU(),
+                nn.Linear(part_hidden, 1),
+            )
+            if use_participation_heads
+            else None
+        )
+        self.hz_return_heads = (
+            nn.ModuleDict(
+                {
+                    str(h): nn.Sequential(
+                        nn.Linear(d_model, part_hidden),
+                        nn.GELU(),
+                        nn.Linear(part_hidden, 1),
+                    )
+                    for h in self.leg_align_horizons
+                }
+            )
+            if self.leg_align_horizons
+            else None
+        )
 
     def forward(
         self,
@@ -163,6 +205,15 @@ class MarketStateHead(nn.Module):
         risk_vol_pooled = pooled.detach() if self.detach_risk_vol_heads else pooled
         volatility = self.volatility_head(risk_vol_pooled)
         risk = self.risk_head(risk_vol_pooled).view(b, self.horizon, self.risk_classes)
+        participation_logit_long = None
+        participation_logit_short = None
+        hz_return_pred: dict[int, torch.Tensor] | None = None
+        if self.participation_logit_long is not None:
+            participation_logit_long = self.participation_logit_long(pooled).squeeze(-1)
+        if self.participation_logit_short is not None:
+            participation_logit_short = self.participation_logit_short(pooled).squeeze(-1)
+        if self.hz_return_heads is not None:
+            hz_return_pred = {int(h): head(pooled).squeeze(-1) for h, head in self.hz_return_heads.items()}
         return MarketStateOutput(
             return_pred=ret,
             direction_logits=direction,
@@ -171,6 +222,9 @@ class MarketStateHead(nn.Module):
             aux={},
             cum_return_pred=cum_return_pred if self.use_cum_heads else None,
             cum_direction_logit=cum_direction_logit,
+            participation_logit_long=participation_logit_long,
+            participation_logit_short=participation_logit_short,
+            hz_return_pred=hz_return_pred,
         )
 
 
@@ -289,6 +343,8 @@ class KlinePatternPredictor(nn.Module):
                 use_horizon_return_head=cfg.use_horizon_return_head,
                 detach_risk_vol_heads=cfg.detach_risk_vol_heads,
                 return_direction_hidden_mult=cfg.return_direction_hidden_mult,
+                use_participation_heads=cfg.use_participation_heads,
+                leg_align_horizons=cfg.leg_align_horizons,
             )
             if cfg.use_market_state_head
             else None

@@ -1,0 +1,26 @@
+{
+  "experiment": "0065a_leg_align",
+  "init_checkpoint": "prod/v0.0.0/checkpoint/market_state_best.pt",
+  "labels_dir": "data/labels/leg_participation",
+  "variants": {
+    "0": {
+      "description": "participation BCE only",
+      "checkpoint_dir": "checkpoints/0065a_leg_align_v0",
+      "participation_weight": 0.25
+    },
+    "1": {
+      "description": "v0 + multi-horizon Huber (12/24)",
+      "checkpoint_dir": "checkpoints/0065a_leg_align_v1",
+      "init_from": "checkpoints/0065a_leg_align_v0/market_state_best.pt"
+    },
+    "2": {
+      "description": "v1 + leg-direction CE on confirmed legs",
+      "checkpoint_dir": "checkpoints/0065a_leg_align_v2",
+      "init_from": "checkpoints/0065a_leg_align_v1/market_state_best.pt"
+    }
+  },
+  "phase1_gates": {
+    "participation_auc_valid_min": 0.55,
+    "cum_return_ic_degradation_max": 0.05
+  }
+}

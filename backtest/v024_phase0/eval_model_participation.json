@@ -1,0 +1,94 @@
+{
+  "splits": {
+    "valid": {
+      "split": "valid",
+      "label_summary": {
+        "bar_count": 1310.0,
+        "confirmed_leg_bar_count": 234.0,
+        "ideal_participate_long_rate": 0.008396946564885497,
+        "ideal_participate_short_rate": 0.0,
+        "eligible_long_rate": 0.010687022900763359,
+        "eligible_short_rate": 0.0,
+        "confirmed_leg_count": 32.0,
+        "ideal_long_per_1000_bars": 8.396946564885496,
+        "ideal_short_per_1000_bars": 0.0
+      },
+      "label_confirmed_leg_count": 32.0,
+      "participation_leg_count": 32,
+      "leg_count_deviation_ratio": 0.0,
+      "leg_count_alignment_gate_pass": true,
+      "participation_metrics": {
+        "leg_count": 32.0,
+        "leg_count_covered": 5.0,
+        "leg_count_coverage_ratio": 0.15625,
+        "leg_bar_coverage_ratio": 0.20085470085470086,
+        "leg_pnl_capture_ratio": -0.08364627542137548,
+        "counter_leg_participation_count": 3.0,
+        "counter_overlap_bar_ratio": 0.017094017094017096,
+        "small_move_leg_count": 18.0,
+        "leg_loss_coverage_count": 1.0,
+        "slow_up_watch_to_open_ratio": 0.0,
+        "slow_up_false_entry_count": 0.0
+      },
+      "model_metrics": {
+        "participation_auc": null,
+        "participation_auc_long": null,
+        "participation_auc_short": null,
+        "confirmed_leg_flat_edge_p50_long": null,
+        "confirmed_leg_flat_edge_p50_short": null,
+        "leg_entry_recall_at_k": null,
+        "hz_direction_acc_24": null,
+        "cum_return_ic": null,
+        "phase": "0_label_only"
+      },
+      "labels_path": "data/labels/leg_participation/leg_participation_valid.csv",
+      "backtest_dir": "backtest/v023_phase1c/valid"
+    },
+    "test": {
+      "split": "test",
+      "label_summary": {
+        "bar_count": 1309.0,
+        "confirmed_leg_bar_count": 222.0,
+        "ideal_participate_long_rate": 0.0007639419404125286,
+        "ideal_participate_short_rate": 0.0007639419404125286,
+        "eligible_long_rate": 0.002291825821237586,
+        "eligible_short_rate": 0.0007639419404125286,
+        "confirmed_leg_count": 30.0,
+        "ideal_long_per_1000_bars": 0.7639419404125286,
+        "ideal_short_per_1000_bars": 0.7639419404125286
+      },
+      "label_confirmed_leg_count": 30.0,
+      "participation_leg_count": 30,
+      "leg_count_deviation_ratio": 0.0,
+      "leg_count_alignment_gate_pass": true,
+      "participation_metrics": {
+        "leg_count": 30.0,
+        "leg_count_covered": 5.0,
+        "leg_count_coverage_ratio": 0.16666666666666666,
+        "leg_bar_coverage_ratio": 0.11711711711711711,
+        "leg_pnl_capture_ratio": -0.007742855930015101,
+        "counter_leg_participation_count": 3.0,
+        "counter_overlap_bar_ratio": 0.08108108108108109,
+        "small_move_leg_count": 18.0,
+        "leg_loss_coverage_count": 3.0,
+        "slow_up_watch_to_open_ratio": 0.0,
+        "slow_up_false_entry_count": 0.0
+      },
+      "model_metrics": {
+        "participation_auc": null,
+        "participation_auc_long": null,
+        "participation_auc_short": null,
+        "confirmed_leg_flat_edge_p50_long": null,
+        "confirmed_leg_flat_edge_p50_short": null,
+        "leg_entry_recall_at_k": null,
+        "hz_direction_acc_24": null,
+        "cum_return_ic": null,
+        "phase": "0_label_only"
+      },
+      "labels_path": "data/labels/leg_participation/leg_participation_test.csv",
+      "backtest_dir": "backtest/v023_phase1c/test"
+    }
+  },
+  "phase": 0,
+  "leg_count_alignment_all_pass": true
+}

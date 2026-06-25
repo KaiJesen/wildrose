@@ -1,0 +1,36 @@
+{
+  "segment_module_version": "022_trend_quality",
+  "trend_signal_config_sha256": "3da83d117118a7b20434652fc707c51047d6cb2da7cc54eab56e57a541b52864",
+  "rule_config_sha256": "3da83d117118a7b20434652fc707c51047d6cb2da7cc54eab56e57a541b52864",
+  "teacher_label_version": "leg_participation_v024_v1",
+  "aligned_leg_types_long": [
+    "FAST_UP_LEG",
+    "SLOW_UP_LEG"
+  ],
+  "aligned_leg_types_short": [
+    "FAST_DOWN_LEG"
+  ],
+  "label_config": {
+    "fee_bps": 4.0,
+    "slippage_bps": 2.0,
+    "mae_atr_limit": 1.5,
+    "max_entry_progress": 0.35,
+    "round_trip_cost": 0.0012
+  },
+  "config_path": "configs/trading_rule_v022_trend_quality_0062e.json",
+  "splits": {
+    "train": {
+      "bar_count": 5984.0,
+      "confirmed_leg_bar_count": 914.0,
+      "ideal_participate_long_rate": 0.000501336898395722,
+      "ideal_participate_short_rate": 0.001838235294117647,
+      "eligible_long_rate": 0.001002673796791444,
+      "eligible_short_rate": 0.0021724598930481284,
+      "confirmed_leg_count": 150.0,
+      "ideal_long_per_1000_bars": 0.5013368983957219,
+      "ideal_short_per_1000_bars": 1.838235294117647,
+      "split": "train",
+      "csv_path": "data/labels/leg_participation/leg_participation_train.csv"
+    }
+  }
+}

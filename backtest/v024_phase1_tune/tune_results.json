@@ -1,0 +1,35 @@
+{
+  "target_valid_participation_auc": 0.55,
+  "verdict": "ACHIEVABLE_WITH_TUNING",
+  "root_cause_baseline_fail": "stride=8 导致 train 序列样本中 ideal 正样本为 0（bar 级有 3 个正样本但被采样对齐跳过）",
+  "best_run": {
+    "name": "s1_os30_pw15",
+    "config": {
+      "stride": 1,
+      "positive_oversample": 30,
+      "participation_weight": 1.5,
+      "freeze_encoder": false,
+      "epochs": 10
+    },
+    "valid_participation_auc": 0.6109,
+    "valid_participation_auc_long": 0.7219,
+    "best_epoch": 1,
+    "checkpoint": "backtest/v024_phase1_tune/s1_os30_pw15/checkpoint/market_state_best.pt"
+  },
+  "borderline_run": {
+    "name": "s1_freeze",
+    "valid_participation_auc": 0.5484,
+    "valid_participation_auc_long": 0.5967,
+    "best_epoch": 11,
+    "note": "freeze encoder 更稳但略低于 0.55"
+  },
+  "baseline_stride8": {
+    "valid_participation_auc": 0.4583,
+    "gate_pass": false
+  },
+  "caveats": [
+    "valid 无 ideal short 正样本，composite AUC 中 short 恒为 0.5，实际门槛等价于 long AUC >= 0.60",
+    "valid 仅 11 个 long 正样本，AUC 方差大",
+    "最佳 epoch 偏早，存在过拟合风险，需以 participation_auc 早停"
+  ]
+}

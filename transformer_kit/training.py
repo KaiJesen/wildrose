@@ -1062,3 +1062,280 @@ def train_market_state_epoch(
         total += float(loss.item()) * bs
         n += bs
     return TrainStepResult(loss=total / max(1, n), lr=optimizer.param_groups[0]["lr"], extras={})
+
+
+def _masked_weighted_bce(
+    logits: torch.Tensor,
+    targets: torch.Tensor,
+    mask: torch.Tensor,
+    weights: torch.Tensor,
+) -> torch.Tensor:
+    if mask.sum() < 1:
+        return logits.new_zeros(())
+    loss = F.binary_cross_entropy_with_logits(logits, targets, reduction="none")
+    w = weights * mask.float()
+    return (loss * w).sum() / w.sum().clamp(min=1e-6)
+
+
+def leg_align_aux_loss(
+    output: MarketStateOutput,
+    batch: dict[str, torch.Tensor],
+    device: torch.device,
+    *,
+    participation_weight: float = 0.0,
+    hz_12_weight: float = 0.0,
+    hz_24_weight: float = 0.0,
+    hz_48_weight: float = 0.0,
+    leg_dir_weight: float = 0.0,
+) -> tuple[torch.Tensor, dict[str, float]]:
+    zero = torch.zeros((), device=device)
+    parts: dict[str, float] = {
+        "participation_loss": 0.0,
+        "hz_12_loss": 0.0,
+        "hz_24_loss": 0.0,
+        "hz_48_loss": 0.0,
+        "leg_dir_loss": 0.0,
+    }
+    total = zero
+    weights = batch["sample_weight"].to(device)
+    confirmed = batch["is_leg_confirmed"].to(device) >= 0.5
+    align_up = batch["align_direction_up"].to(device) >= 0.5
+    align_down = batch["align_direction_down"].to(device) >= 0.5
+    fast_down = batch["leg_type_fast_down"].to(device) >= 0.5
+
+    if participation_weight > 0 and output.participation_logit_long is not None:
+        long_mask = confirmed & align_up
+        short_mask = confirmed & align_down & fast_down
+        long_loss = _masked_weighted_bce(
+            output.participation_logit_long,
+            batch["ideal_participate_long"].to(device),
+            long_mask,
+            weights,
+        )
+        short_loss = _masked_weighted_bce(
+            output.participation_logit_short,
+            batch["ideal_participate_short"].to(device),
+            short_mask,
+            weights,
+        )
+        part_loss = 0.5 * (long_loss + short_loss)
+        parts["participation_loss"] = float(part_loss.detach())
+        total = total + participation_weight * part_loss
+
+    hz_weights = {12: hz_12_weight, 24: hz_24_weight, 48: hz_48_weight}
+    if output.hz_return_pred is not None:
+        for h, w in hz_weights.items():
+            if w <= 0 or h not in output.hz_return_pred:
+                continue
+            key = f"target_hz_return_{h}"
+            if key not in batch:
+                continue
+            pred = output.hz_return_pred[h]
+            tgt = batch[key].to(device)
+            mask = confirmed & (align_up | align_down)
+            if mask.sum() < 1:
+                continue
+            huber = F.huber_loss(pred, tgt, delta=0.5, reduction="none")
+            ww = weights * mask.float()
+            hz_loss = (huber * ww).sum() / ww.sum().clamp(min=1e-6)
+            parts[f"hz_{h}_loss"] = float(hz_loss.detach())
+            total = total + w * hz_loss
+
+    if leg_dir_weight > 0:
+        dir_logits = output.direction_logits[:, 0, :]
+        target = torch.full((dir_logits.size(0),), 1, dtype=torch.long, device=device)
+        target[confirmed & align_up] = 2
+        target[confirmed & align_down & fast_down] = 0
+        leg_mask = confirmed & ((align_up) | (align_down & fast_down))
+        if leg_mask.sum() >= 1:
+            dir_loss = F.cross_entropy(dir_logits[leg_mask], target[leg_mask])
+            parts["leg_dir_loss"] = float(dir_loss.detach())
+            total = total + leg_dir_weight * dir_loss
+
+    return total, parts
+
+
+def _roc_auc_score(y_true: np.ndarray, y_score: np.ndarray) -> float:
+    try:
+        from sklearn.metrics import roc_auc_score
+
+        if len(np.unique(y_true)) < 2:
+            return 0.5
+        return float(roc_auc_score(y_true, y_score))
+    except Exception:
+        order = np.argsort(y_score)
+        y_sorted = y_true[order]
+        n_pos = y_sorted.sum()
+        n_neg = len(y_sorted) - n_pos
+        if n_pos < 1 or n_neg < 1:
+            return 0.5
+        ranks = np.arange(1, len(y_sorted) + 1)
+        sum_ranks_pos = ranks[y_sorted == 1].sum()
+        return float((sum_ranks_pos - n_pos * (n_pos + 1) / 2) / (n_pos * n_neg))
+
+
+@torch.no_grad()
+def evaluate_leg_align_market_state(
+    model: nn.Module,
+    loader: DataLoader,
+    device: torch.device,
+    *,
+    return_weight: float = 0.35,
+    direction_weight: float = 0.30,
+    volatility_weight: float = 0.10,
+    risk_weight: float = 0.09,
+    cum_return_weight: float = 0.18,
+    cum_direction_head_weight: float = 0.03,
+    return_consistency_weight: float = 0.01,
+    participation_weight: float = 0.0,
+    hz_12_weight: float = 0.0,
+    hz_24_weight: float = 0.0,
+    hz_48_weight: float = 0.0,
+    leg_dir_weight: float = 0.0,
+) -> dict[str, float]:
+    base = evaluate_market_state(
+        model,
+        loader,
+        device,
+        return_weight=return_weight,
+        direction_weight=direction_weight,
+        volatility_weight=volatility_weight,
+        risk_weight=risk_weight,
+        cum_return_weight=cum_return_weight,
+        cum_direction_head_weight=cum_direction_head_weight,
+        return_consistency_weight=return_consistency_weight,
+    )
+    model.eval()
+    long_scores: list[float] = []
+    long_labels: list[float] = []
+    short_scores: list[float] = []
+    short_labels: list[float] = []
+    hz24_pred: list[float] = []
+    hz24_true: list[float] = []
+    flat_edge_long: list[float] = []
+    flat_edge_short: list[float] = []
+
+    for batch in loader:
+        ctx = batch["ctx_bars"].to(device)
+        ctx_len = batch["ctx_lengths"].to(device)
+        out = model(ctx, ctx_len)
+        if not isinstance(out, MarketStateOutput):
+            raise RuntimeError("model must return MarketStateOutput")
+        if out.participation_logit_long is None:
+            continue
+        pl = torch.sigmoid(out.participation_logit_long).detach().cpu().numpy()
+        ps = torch.sigmoid(out.participation_logit_short).detach().cpu().numpy()
+        confirmed = batch["is_leg_confirmed"].numpy() >= 0.5
+        up = batch["align_direction_up"].numpy() >= 0.5
+        down = batch["align_direction_down"].numpy() >= 0.5
+        fast_down = batch["leg_type_fast_down"].numpy() >= 0.5
+        ideal_l = batch["ideal_participate_long"].numpy()
+        ideal_s = batch["ideal_participate_short"].numpy()
+        long_mask = confirmed & up
+        short_mask = confirmed & down & fast_down
+        if long_mask.any():
+            long_scores.extend(pl[long_mask].tolist())
+            long_labels.extend(ideal_l[long_mask].tolist())
+            flat_edge_long.extend((2.0 * pl[long_mask] - 1.0).tolist())
+        if short_mask.any():
+            short_scores.extend(ps[short_mask].tolist())
+            short_labels.extend(ideal_s[short_mask].tolist())
+            flat_edge_short.extend((2.0 * ps[short_mask] - 1.0).tolist())
+        if out.hz_return_pred is not None and 24 in out.hz_return_pred and "target_hz_return_24" in batch:
+            pred24 = out.hz_return_pred[24].detach().cpu().numpy()
+            true24 = batch["target_hz_return_24"].numpy()
+            leg_mask = confirmed & (up | down)
+            if leg_mask.any():
+                hz24_pred.extend(pred24[leg_mask].tolist())
+                hz24_true.extend(true24[leg_mask].tolist())
+
+    auc_l = _roc_auc_score(np.asarray(long_labels), np.asarray(long_scores)) if long_labels else 0.5
+    auc_s = _roc_auc_score(np.asarray(short_labels), np.asarray(short_scores)) if short_labels else 0.5
+    participation_auc = 0.5 * (auc_l + auc_s)
+    hz_acc = 0.0
+    if hz24_pred:
+        hp = np.sign(np.asarray(hz24_pred))
+        ht = np.sign(np.asarray(hz24_true))
+        hz_acc = float((hp == ht).mean())
+    base.update(
+        {
+            "participation_auc": participation_auc,
+            "participation_auc_long": auc_l,
+            "participation_auc_short": auc_s,
+            "confirmed_leg_flat_edge_p50_long": float(np.median(flat_edge_long)) if flat_edge_long else 0.0,
+            "confirmed_leg_flat_edge_p50_short": float(np.median(flat_edge_short)) if flat_edge_short else 0.0,
+            "hz_direction_acc_24": hz_acc,
+        }
+    )
+    return base
+
+
+def train_leg_align_market_state_epoch(
+    model: nn.Module,
+    loader: DataLoader,
+    optimizer: torch.optim.Optimizer,
+    scheduler,
+    device: torch.device,
+    *,
+    grad_clip: float = 1.0,
+    return_weight: float = 0.35,
+    direction_weight: float = 0.30,
+    volatility_weight: float = 0.10,
+    risk_weight: float = 0.09,
+    cum_return_weight: float = 0.18,
+    cum_direction_head_weight: float = 0.03,
+    return_consistency_weight: float = 0.01,
+    participation_weight: float = 0.25,
+    hz_12_weight: float = 0.0,
+    hz_24_weight: float = 0.0,
+    hz_48_weight: float = 0.0,
+    leg_dir_weight: float = 0.0,
+) -> TrainStepResult:
+    model.train()
+    total = 0.0
+    n = 0
+    for batch in loader:
+        ctx = batch["ctx_bars"].to(device)
+        ctx_len = batch["ctx_lengths"].to(device)
+        tgt = MarketStateTargets(
+            future_log_ret=batch["target_return"].to(device),
+            direction_label=batch["target_direction"].to(device),
+            volatility=batch["target_volatility"].to(device),
+            risk_label=batch["target_risk"].to(device),
+        )
+        optimizer.zero_grad(set_to_none=True)
+        out = model(ctx, ctx_len)
+        if not isinstance(out, MarketStateOutput):
+            raise RuntimeError("model must return MarketStateOutput")
+        loss, _ = market_state_loss(
+            out,
+            tgt,
+            return_weight=return_weight,
+            direction_weight=direction_weight,
+            volatility_weight=volatility_weight,
+            risk_weight=risk_weight,
+            cum_return_weight=cum_return_weight,
+            cum_direction_head_weight=cum_direction_head_weight,
+            return_consistency_weight=return_consistency_weight,
+        )
+        aux_loss, _ = leg_align_aux_loss(
+            out,
+            batch,
+            device,
+            participation_weight=participation_weight,
+            hz_12_weight=hz_12_weight,
+            hz_24_weight=hz_24_weight,
+            hz_48_weight=hz_48_weight,
+            leg_dir_weight=leg_dir_weight,
+        )
+        aux = out.aux
+        loss = loss + aux_loss + 0.08 * aux["vq_loss"] + 0.04 * aux["break_reg_loss"]
+        loss.backward()
+        _maybe_clip(model, grad_clip)
+        optimizer.step()
+        if scheduler is not None:
+            scheduler.step()
+        bs = ctx.size(0)
+        total += float(loss.item()) * bs
+        n += bs
+    return TrainStepResult(loss=total / max(1, n), lr=optimizer.param_groups[0]["lr"], extras={})
