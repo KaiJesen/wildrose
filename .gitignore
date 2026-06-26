@@ -12,6 +12,8 @@ __pycache__/
 # 打包/构建产物
 build/
 dist/
+!website/src/frontend/dist/
+!website/src/frontend/dist/**
 *.egg-info/
 .eggs/
 

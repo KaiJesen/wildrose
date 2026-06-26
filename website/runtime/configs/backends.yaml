@@ -1,0 +1,19 @@
+backends:
+  - id: prod-v1.0.0-live
+    display_name: "v1.0.0 LIVE (BTCUSDT 1h)"
+    symbol: BTCUSDT
+    interval: 1h
+    mode: live
+    manifest_path: prod/v1.0.0/MANIFEST.json
+    config_path: prod/v1.0.0/config/trading_rule.json
+    checkpoint: prod/v1.0.0/checkpoint/market_state_best.pt
+    data_root: backtest/prod_v0.0.0_smoke
+
+  - id: prod-v1.1.0-archive
+    display_name: "v1.1.0 Archive (smoke)"
+    symbol: BTCUSDT
+    interval: 1h
+    mode: archive
+    manifest_path: prod/v1.1.0/MANIFEST.json
+    config_path: prod/v1.1.0/config/trading_rule.json
+    data_root: backtest/prod_v0.0.0_smoke

@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>wildrose 交易监控</title>
+  <link rel="stylesheet" href="/styles.css" />
+  <script src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
+</head>
+<body>
+  <header class="header">
+    <div class="brand">wildrose monitor</div>
+    <div class="controls">
+      <span id="liveBadge" class="badge">LIVE</span>
+      <label>版本
+        <select id="backendSelect"></select>
+      </label>
+      <span id="latestBar" class="meta"></span>
+      <button id="refreshBtn">刷新</button>
+    </div>
+  </header>
+
+  <main class="grid">
+    <section class="cards" id="cards"></section>
+    <section class="panel">
+      <h2>权益曲线（归一化）</h2>
+      <div id="equityChart" class="chart-sm"></div>
+    </section>
+    <section class="panel chart-panel">
+      <h2>真实实时 K 线 <span class="hint">binance_futures</span></h2>
+      <div id="candleChart" class="chart-lg"></div>
+    </section>
+    <section class="panel">
+      <h2>最近成交</h2>
+      <table id="tradesTable">
+        <thead><tr>
+          <th>方向</th><th>开仓</th><th>平仓</th><th>入场价</th><th>出场价</th><th>净收益</th>
+        </tr></thead>
+        <tbody></tbody>
+      </table>
+    </section>
+    <section class="panel">
+      <h2>BLOCK 原因 TopN</h2>
+      <ul id="blockList"></ul>
+    </section>
+  </main>
+  <script src="/app.js"></script>
+</body>
+</html>

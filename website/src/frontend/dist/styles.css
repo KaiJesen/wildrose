@@ -1,0 +1,77 @@
+:root {
+  --bg: #0f1419;
+  --card: #1a2332;
+  --text: #e7ecf3;
+  --muted: #8b9cb3;
+  --up: #26a69a;
+  --down: #ef5350;
+  --accent: #4fc3f7;
+  --border: #2a3545;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font-family: "Segoe UI", system-ui, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+}
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 20px;
+  border-bottom: 1px solid var(--border);
+  background: #121a24;
+}
+.brand { font-weight: 700; letter-spacing: 0.04em; }
+.controls { display: flex; gap: 16px; align-items: center; }
+.badge {
+  background: #1b5e20;
+  color: #a5d6a7;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+}
+.badge.off { background: #424242; color: #bbb; }
+.meta { color: var(--muted); font-size: 13px; }
+select, button {
+  background: var(--card);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 10px;
+}
+.grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+  padding: 12px;
+}
+.cards { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+.card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 14px;
+}
+.card h3 { margin: 0 0 8px; font-size: 13px; color: var(--muted); text-transform: uppercase; }
+.card .val { font-size: 22px; font-weight: 600; }
+.card .sub { font-size: 12px; color: var(--muted); margin-top: 6px; }
+.panel {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px;
+}
+.chart-panel { grid-column: 1 / -1; }
+.chart-lg { height: 420px; }
+.chart-sm { height: 160px; }
+.hint { font-size: 12px; color: var(--muted); font-weight: normal; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th, td { border-bottom: 1px solid var(--border); padding: 6px 8px; text-align: left; }
+#blockList { margin: 0; padding-left: 18px; font-size: 13px; color: var(--muted); }
+@media (max-width: 1100px) {
+  .grid, .cards { grid-template-columns: 1fr 1fr; }
+  .chart-panel { grid-column: 1 / -1; }
+}

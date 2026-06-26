@@ -1,0 +1,6 @@
+# Runtime data (sqlite, logs, venv)
+venv/
+data/
+logs/
+*.db
+*.log
