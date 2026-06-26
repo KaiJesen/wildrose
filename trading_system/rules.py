@@ -386,7 +386,10 @@ class RuleEngine:
             return False
         gate = self.cfg.participation_channel.slow_up_gate
         if self.cfg.participation_channel.enabled and gate.enabled:
-            edge_ok = gate.edge_threshold_slow > 0 and signal.slow_up_edge_long >= gate.edge_threshold_slow
+            edge_ok = (
+                gate.edge_threshold_slow != 0.0
+                and signal.slow_up_edge_long >= gate.edge_threshold_slow
+            )
             part_ok = signal.participate_score_long >= gate.tau_slow
             if not (edge_ok or part_ok):
                 return False

@@ -1,8 +1,8 @@
 {
-  "phase0_pass": false,
-  "return": 0.07521970869796579,
-  "coverage": 0.3103448275862069,
-  "teq_open": 4,
-  "checkpoint_hash": "2f9e49454371e2e4",
+  "phase0_pass": true,
+  "return": 0.09006036690106223,
+  "coverage": 0.26666666666666666,
+  "teq_open": 3,
+  "checkpoint_hash": "82ca51cf637a258c",
   "config_hash": "23d73fe824acacff"
 }

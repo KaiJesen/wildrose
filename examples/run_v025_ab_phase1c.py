@@ -3,16 +3,24 @@
 
 from __future__ import annotations
 
+import argparse
 import json
 import subprocess
 import sys
 from pathlib import Path
 
 _ROOT = Path(__file__).resolve().parents[1]
+if str(_ROOT) not in sys.path:
+    sys.path.insert(0, str(_ROOT))
+if str(_ROOT / "examples") not in sys.path:
+    sys.path.insert(0, str(_ROOT / "examples"))
+
+from _v025_common import PW20_CKPT, kline_backtest_args, verify_pw20_checkpoint
+
 PHASE0_SUMMARY = _ROOT / "backtest/v025_phase0/phase0_summary.json"
 B0_CONFIG = _ROOT / "configs/trading_rule_v024_phase1c_teq_0065a_c1_pw20.json"
 A3A_CONFIG = _ROOT / "configs/trading_rule_v025_a3a_slow_up.json"
-CKPT = _ROOT / "checkpoints/0065a_leg_align_c1_pw20/market_state_best.pt"
+CKPT = PW20_CKPT
 OUT = _ROOT / "backtest/v025_ab"
 EXPLORE_RETURN = 0.0884
 EXPLORE_COVERAGE = 0.28
@@ -51,6 +59,7 @@ def _backtest(name: str, *, config: Path, split: str) -> Path:
         split,
         "--output-dir",
         str(out.relative_to(_ROOT)),
+        *kline_backtest_args(),
     ])
     return out
 
@@ -79,6 +88,7 @@ def main() -> int:
         raise SystemExit("Phase 0 B0 reproduction gate not PASS — run examples/run_v025_phase0.py first")
     if not CKPT.is_file():
         raise FileNotFoundError(CKPT)
+    verify_pw20_checkpoint()
 
     OUT.mkdir(parents=True, exist_ok=True)
     arms = {

@@ -4,20 +4,32 @@
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import subprocess
 import sys
 from pathlib import Path
 
 _ROOT = Path(__file__).resolve().parents[1]
+if str(_ROOT) not in sys.path:
+    sys.path.insert(0, str(_ROOT))
+if str(_ROOT / "examples") not in sys.path:
+    sys.path.insert(0, str(_ROOT / "examples"))
+
+from _v025_common import (
+    FROZEN_KLINE_CSV,
+    PW20_CKPT,
+    TEQ_CALIBRATION,
+    kline_backtest_args,
+    sha256_prefix,
+    verify_pw20_checkpoint,
+)
+
 RECIPE = _ROOT / "configs/training_recipe_0065a_constrained.json"
 PHASE1C = _ROOT / "configs/trading_rule_v023_phase1c_0062e.json"
 B0_CONFIG = _ROOT / "configs/trading_rule_v024_phase1c_teq_0065a_c1_pw20.json"
 PROD_CKPT = _ROOT / "prod/v0.0.0/checkpoint/market_state_best.pt"
 C0_CKPT = _ROOT / "checkpoints/0065a_leg_align_c0/market_state_best.pt"
-PW20_CKPT = _ROOT / "checkpoints/0065a_leg_align_c1_pw20/market_state_best.pt"
-CALIBRATION = _ROOT / "backtest/v024_constrained/teq_edge_calibration.json"
+CALIBRATION = TEQ_CALIBRATION
 OUT = _ROOT / "backtest/v025_phase0"
 B0_RETURN = 0.0901
 B0_COVERAGE = 0.267
@@ -42,11 +54,7 @@ def _part_metrics(part: dict) -> dict:
 
 
 def _sha256(path: Path) -> str:
-    h = hashlib.sha256()
-    with path.open("rb") as f:
-        for chunk in iter(lambda: f.read(1 << 20), b""):
-            h.update(chunk)
-    return h.hexdigest()[:16]
+    return sha256_prefix(path)
 
 
 def _train_c0(recipe: dict) -> None:
@@ -146,6 +154,7 @@ def _backtest_b0(split: str) -> Path:
         split,
         "--output-dir",
         str(out.relative_to(_ROOT)),
+        *kline_backtest_args(),
     ])
     return out
 
@@ -174,6 +183,10 @@ def main() -> int:
         if not CALIBRATION.is_file():
             print("fitting TEQ calibration...")
             _calibrate_teq()
+
+    verify_pw20_checkpoint()
+    if not CALIBRATION.is_file():
+        raise FileNotFoundError(f"missing frozen TEQ calibration: {CALIBRATION}")
 
     b0_test = _backtest_b0("test")
     _run([
@@ -205,6 +218,7 @@ def main() -> int:
         f"- checkpoint: `{PW20_CKPT.relative_to(_ROOT)}` (`{ckpt_hash}`)",
         f"- config: `{B0_CONFIG.relative_to(_ROOT)}` (`{cfg_hash}`)",
         f"- calibration: `{CALIBRATION.relative_to(_ROOT)}`",
+        f"- frozen kline: `{FROZEN_KLINE_CSV.relative_to(_ROOT)}`",
         "",
         "## B0 test gate",
         "",

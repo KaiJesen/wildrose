@@ -1,18 +1,19 @@
 # 025 Phase 0 — B0 Reproduction
 
-- checkpoint: `checkpoints/0065a_leg_align_c1_pw20/market_state_best.pt` (`2f9e49454371e2e4`)
+- checkpoint: `checkpoints/0065a_leg_align_c1_pw20/market_state_best.pt` (`82ca51cf637a258c`)
 - config: `configs/trading_rule_v024_phase1c_teq_0065a_c1_pw20.json` (`23d73fe824acacff`)
 - calibration: `backtest/v024_constrained/teq_edge_calibration.json`
+- frozen kline: `data/cache/kline/binance_vision_BTCUSDT_1h_365d_end20260625.csv`
 
 ## B0 test gate
 
 | metric | expected | actual | status |
 |--------|----------|--------|--------|
-| total_return | 9.01% ±0.20% | 7.52% | **FAIL** |
-| leg_count_coverage | 26.70% ±1.00% | 31.03% | **FAIL** |
-| teq_open | 3 | 4 | **FAIL** |
+| total_return | 9.01% ±0.20% | 9.01% | **PASS** |
+| leg_count_coverage | 26.70% ±1.00% | 26.67% | **PASS** |
+| teq_open | 3 | 3 | **PASS** |
 
-**Phase 0 overall: FAIL**
+**Phase 0 overall: PASS**
 
 ## Field对照（decisions.csv ↔ eval_participation）
 
