@@ -6,12 +6,20 @@ import hashlib
 from pathlib import Path
 
 _ROOT = Path(__file__).resolve().parents[1]
+_PROD_V111 = _ROOT / "prod/v1.1.1"
 
 # 024 B0 backtests used this cache snapshot (see REPORT_024_CONSTRAINED_FINAL).
-FROZEN_KLINE_CSV = _ROOT / "data/cache/kline/binance_vision_BTCUSDT_1h_365d_end20260625.csv"
+_REPO_KLINE = _ROOT / "data/cache/kline/binance_vision_BTCUSDT_1h_365d_end20260625.csv"
+_PROD_KLINE = _PROD_V111 / "data/kline/binance_vision_BTCUSDT_1h_365d_end20260625.csv"
+FROZEN_KLINE_CSV = _REPO_KLINE if _REPO_KLINE.is_file() else _PROD_KLINE
 
-PW20_CKPT = _ROOT / "checkpoints/0065a_leg_align_c1_pw20/market_state_best.pt"
-TEQ_CALIBRATION = _ROOT / "backtest/v024_constrained/teq_edge_calibration.json"
+_REPO_CKPT = _ROOT / "checkpoints/0065a_leg_align_c1_pw20/market_state_best.pt"
+_PROD_CKPT = _PROD_V111 / "checkpoint/market_state_best.pt"
+PW20_CKPT = _REPO_CKPT if _REPO_CKPT.is_file() else _PROD_CKPT
+
+_REPO_CALIB = _ROOT / "backtest/v024_constrained/teq_edge_calibration.json"
+_PROD_CALIB = _PROD_V111 / "calibration/teq_edge_calibration.json"
+TEQ_CALIBRATION = _REPO_CALIB if _REPO_CALIB.is_file() else _PROD_CALIB
 
 # Observed on 024 original machine; used as a presence/consistency hint only.
 EXPECTED_PW20_CKPT_HASH_PREFIX = "82ca51cf637a258c"

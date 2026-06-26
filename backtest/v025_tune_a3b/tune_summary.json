@@ -1,0 +1,95 @@
+{
+  "b0_valid": {
+    "return": 0.018319900821289314,
+    "coverage": 0.1875,
+    "teq_open": 2,
+    "trade_count": 22,
+    "counter_leg": 3
+  },
+  "rows": [
+    {
+      "tag": "b0",
+      "alpha": null,
+      "beta": null,
+      "gamma": null,
+      "return": 0.018319900821289314,
+      "coverage": 0.1875,
+      "teq_open": 2,
+      "trade_count": 22,
+      "counter_leg": 3
+    },
+    {
+      "return": -0.03412034301511224,
+      "coverage": 0.15625,
+      "teq_open": 1,
+      "trade_count": 21,
+      "counter_leg": 3,
+      "tag": "a0p60_b0p25_g0p15",
+      "alpha": 0.6,
+      "beta": 0.25,
+      "gamma": 0.15,
+      "incr_cov": -0.03125
+    },
+    {
+      "return": -0.03412034301511224,
+      "coverage": 0.15625,
+      "teq_open": 1,
+      "trade_count": 21,
+      "counter_leg": 3,
+      "tag": "a0p55_b0p25_g0p20",
+      "alpha": 0.55,
+      "beta": 0.25,
+      "gamma": 0.2,
+      "incr_cov": -0.03125
+    },
+    {
+      "return": -0.03412034301511224,
+      "coverage": 0.15625,
+      "teq_open": 1,
+      "trade_count": 21,
+      "counter_leg": 3,
+      "tag": "a0p65_b0p20_g0p15",
+      "alpha": 0.65,
+      "beta": 0.2,
+      "gamma": 0.15,
+      "incr_cov": -0.03125
+    },
+    {
+      "return": -0.03412034301511224,
+      "coverage": 0.15625,
+      "teq_open": 1,
+      "trade_count": 21,
+      "counter_leg": 3,
+      "tag": "a0p55_b0p20_g0p25",
+      "alpha": 0.55,
+      "beta": 0.2,
+      "gamma": 0.25,
+      "incr_cov": -0.03125
+    },
+    {
+      "return": -0.03412034301511224,
+      "coverage": 0.15625,
+      "teq_open": 1,
+      "trade_count": 21,
+      "counter_leg": 3,
+      "tag": "a0p70_b0p15_g0p15",
+      "alpha": 0.7,
+      "beta": 0.15,
+      "gamma": 0.15,
+      "incr_cov": -0.03125
+    },
+    {
+      "return": -0.03412034301511224,
+      "coverage": 0.15625,
+      "teq_open": 1,
+      "trade_count": 21,
+      "counter_leg": 3,
+      "tag": "a0p50_b0p25_g0p25",
+      "alpha": 0.5,
+      "beta": 0.25,
+      "gamma": 0.25,
+      "incr_cov": -0.03125
+    }
+  ],
+  "best": null
+}

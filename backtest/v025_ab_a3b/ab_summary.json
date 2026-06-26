@@ -1,0 +1,27 @@
+{
+  "b0": {
+    "arm": "b0",
+    "total_return": 0.09006036690106223,
+    "max_drawdown": -0.012136272269246696,
+    "trade_count": 13,
+    "teq_open": 3,
+    "slow_up_open": 0,
+    "teq_pnl": 0.007977117171790428,
+    "coverage": 0.26666666666666666,
+    "counter_leg": 2
+  },
+  "a3b": {
+    "arm": "a3b",
+    "total_return": 0.06806749661031763,
+    "max_drawdown": -0.02840862170701003,
+    "trade_count": 12,
+    "teq_open": 1,
+    "slow_up_open": 0,
+    "teq_pnl": -0.0023167166400905872,
+    "coverage": 0.3,
+    "counter_leg": 1
+  },
+  "incr_cov": 0.033333333333333326,
+  "explore_pass": false,
+  "a3b_config": "configs/trading_rule_v025_a3b_std_trend.json"
+}

@@ -1,0 +1,39 @@
+{
+  "product": "wildrose-trading-system",
+  "version": "v1.1.1",
+  "release_date": "2026-06-26",
+  "kind": "research_baseline_b0",
+  "git_commit": "3db8df4a1167db94aa4e7abd0c8a8c207e1bd87e",
+  "git_commit_date": "2026-06-26 10:22:09 +0800",
+  "strategy": "v024 phase1c TEQ c1_pw20 wp=0.35 (B0)",
+  "model_checkpoint": "checkpoint/market_state_best.pt",
+  "model_source": "0065a_leg_align_c1_pw20",
+  "checkpoint_hash_prefix": "82ca51cf637a258c",
+  "config": "config/trading_rule.json",
+  "calibration": "calibration/teq_edge_calibration.json",
+  "frozen_kline": "data/kline/binance_vision_BTCUSDT_1h_365d_end20260625.csv",
+  "code_packages": [
+    "trading_system",
+    "transformer_kit",
+    "market_data",
+    "best_point"
+  ],
+  "production_note": "prod trading remains v1.1.0 (0062e); v1.1.1 is 024/025 research baseline only",
+  "backtest_reference": {
+    "symbol": "BTCUSDT",
+    "interval": "1h",
+    "days": 365,
+    "split": "test",
+    "metrics_file": "metrics/backtest_test_oos.json",
+    "expected_return": 0.0901,
+    "expected_coverage": 0.267,
+    "expected_teq_open": 3
+  },
+  "supplemental_references": {
+    "architect_ruling": "docs/\u67b6\u6784\u5e08-025-\u9879\u76ee\u88c1\u5b9a\u4e0e\u4e0b\u4e00\u6b65\u6307\u5bfc.md",
+    "phase0_report": "docs/REPORT_025_PHASE0.md",
+    "a3a_report": "docs/REPORT_025_AB.md",
+    "a3b_report": "docs/REPORT_025_A3B.md",
+    "project_log": "docs/PROJECT_LOG.md"
+  }
+}

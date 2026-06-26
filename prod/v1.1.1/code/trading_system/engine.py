@@ -1,0 +1,584 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+from trading_system.adapters.best_point_model import BestPointSignal
+from trading_system.config import TradingSystemConfig
+from trading_system.crash import CrashContext, CrashRegimeDetector
+from trading_system.enums import ActionType, Side
+from trading_system.execution import BacktestExecutionEngine
+from trading_system.logger import TradeLogger
+from trading_system.portfolio import PortfolioState
+from trading_system.risk import RiskManager
+from trading_system.rules import RuleEngine, TradingAction
+from trading_system.signal import TradingSignal
+from trading_system.sizing import PositionSizer
+from trading_system.slow_trend import SlowTrendContext, SlowUptrendDetector
+from trading_system.trend_segment import SegmentContext, TrendSegmentEngine
+from trading_system.trend import TrendContext, TrendRegimeFilter
+from trading_system.trend_signal import TrendMemory, TrendSignal, TrendSignalProvider
+from trading_system.trend_bias import CounterTrendLevel, RiskBudget, TrendBiasBuilder, TrendBiasContext, neutral_trend_bias
+from trading_system.trend_entry_qualifier import TrendEntryQualifier, TrendEntryQualification, empty_trend_entry_qualification
+
+
+@dataclass
+class Bar:
+    idx: int
+    ts: object
+    open: float
+    high: float
+    low: float
+    close: float
+    atr: float
+
+
+class TradingEngine:
+    def __init__(self, cfg: TradingSystemConfig, logger: TradeLogger) -> None:
+        self.cfg = cfg
+        self.logger = logger
+        self.portfolio = PortfolioState()
+        self.rule_engine = RuleEngine(cfg)
+        self.risk_manager = RiskManager(cfg)
+        self.position_sizer = PositionSizer(cfg)
+        self.execution_engine = BacktestExecutionEngine(cfg)
+        self.trend_filter = TrendRegimeFilter(cfg.trend)
+        self.trend_signal_provider = TrendSignalProvider(cfg.trend_signal)
+        self.trend_memory = TrendMemory()
+        self.crash_detector = CrashRegimeDetector(cfg.crash)
+        self.slow_uptrend_detector = SlowUptrendDetector(cfg.slow_uptrend)
+        self.trend_segment_engine = TrendSegmentEngine(cfg.trend_segment)
+        self.trend_bias_builder = TrendBiasBuilder(cfg.trend_bias, cfg.trend_hold_extension)
+        self.trend_entry_qualifier = TrendEntryQualifier(cfg.trend_entry_qualifier)
+        self.position_limit_violations = 0
+        self.risk_rule_violations = 0
+        self.max_margin_loss_ratio_observed = 0.0
+        self.close_hist: list[float] = []
+        self.high_hist: list[float] = []
+        self.low_hist: list[float] = []
+        self.atr_hist: list[float] = []
+        self._last_trend_context: TrendContext | None = None
+        self._last_trend_signal: TrendSignal | None = None
+        self._last_crash_context: CrashContext | None = None
+        self._last_slow_context: SlowTrendContext | None = None
+        self._last_segment_context: SegmentContext | None = None
+        self._last_trend_bias: TrendBiasContext = neutral_trend_bias()
+        self._last_trend_entry_qualification: TrendEntryQualification = empty_trend_entry_qualification()
+        self._last_risk_budget: RiskBudget | None = None
+        self.legacy_trend_direct_block_count = 0
+        self.legacy_trend_direct_read_count = 0
+        self.hard_counter_open_count = 0
+        self.trend_add_candidate_count = 0
+        self.trend_add_risk_evaluated_count = 0
+        self.trend_add_rejected_by_risk_count = 0
+        self.trend_add_allowed_count = 0
+        self._downtrend_regime_active: bool = False
+        self._sentinel_used_in_regime: bool = False
+
+    def _mark_to_market(self, current_bar: Bar) -> None:
+        pos = self.portfolio.position
+        if pos.is_flat or current_bar.idx <= 0:
+            self.portfolio.unrealized_pnl = 0.0
+            return
+        # open-to-close approximation for current bar mark.
+        pnl = 0.0
+        if pos.side == Side.LONG:
+            pnl = pos.notional_exposure * (current_bar.close - pos.avg_price) / max(1e-12, pos.avg_price)
+            profit_atr = (current_bar.close - pos.entry_price) / max(current_bar.atr, 1e-12)
+            pos.peak_profit_atr = max(pos.peak_profit_atr, float(profit_atr))
+        elif pos.side == Side.SHORT:
+            pnl = pos.notional_exposure * (pos.avg_price - current_bar.close) / max(1e-12, pos.avg_price)
+            profit_atr = (pos.entry_price - current_bar.close) / max(current_bar.atr, 1e-12)
+            pos.peak_profit_atr = max(pos.peak_profit_atr, float(profit_atr))
+        self.portfolio.unrealized_pnl = pnl
+        if pos.margin_used > 0:
+            ratio = max(0.0, -pnl / max(1e-12, pos.margin_used))
+            self.max_margin_loss_ratio_observed = max(self.max_margin_loss_ratio_observed, ratio)
+
+    def _apply_fill(self, fill, current_bar: Bar) -> None:
+        p = self.portfolio
+        pos = p.position
+        p.equity = max(1e-9, p.equity - fill.fee)
+        p.cash = p.equity
+        # Handle close record before state reset.
+        if fill.action in (ActionType.CLOSE, ActionType.FORCE_CLOSE) and not pos.is_flat:
+            if pos.side == Side.LONG:
+                trade_ret = (fill.price - pos.entry_price) / max(1e-12, pos.entry_price)
+            else:
+                trade_ret = (pos.entry_price - fill.price) / max(1e-12, pos.entry_price)
+            pnl_eq = trade_ret * pos.notional_exposure
+            p.realized_pnl += pnl_eq
+            p.equity += pnl_eq
+            self.logger.record_trade(
+                {
+                    "entry_ts": pos.entry_ts,
+                    "exit_ts": fill.ts,
+                    "side": pos.side.value,
+                    "entry_price": pos.entry_price,
+                    "exit_price": fill.price,
+                    "max_position_ratio": pos.position_ratio,
+                    "avg_position_ratio": pos.position_ratio,
+                    "add_count": pos.add_count,
+                    "bars_held": pos.bars_held,
+                    "entry_reason": pos.entry_signal_snapshot.get("reason_code", ""),
+                    "exit_reason": fill.reason_code,
+                    "gross_pnl": pnl_eq,
+                    "fee": fill.fee,
+                    "slippage_cost": 0.0,
+                    "net_pnl": pnl_eq - fill.fee,
+                    "return_on_equity": pnl_eq,
+                    "return_on_margin": pnl_eq / max(1e-12, pos.margin_used),
+                    "max_adverse_excursion": 0.0,
+                    "max_favorable_excursion": pos.peak_unrealized_pnl,
+                    "entry_trend_context": pos.entry_signal_snapshot.get("entry_trend_context", ""),
+                    "exit_trend_context": "|".join(self._last_trend_context.reason_codes) if self._last_trend_context else "",
+                    "entry_was_probe": int(pos.entry_was_probe),
+                    "entry_was_sentinel": int(pos.entry_was_sentinel),
+                    "entry_was_crash": int(pos.entry_was_crash),
+                    "entry_was_slow_up": int(pos.entry_was_slow_up),
+                    "entry_was_trend_qualified": int(pos.entry_was_trend_qualified),
+                    "entry_leg_id": pos.entry_leg_id,
+                    "entry_leg_type": pos.entry_leg_type,
+                    "hold_mode": pos.hold_mode,
+                    "entry_trend_direction": pos.entry_trend_direction,
+                    "entry_trend_strength": pos.entry_trend_strength,
+                    "entry_trend_phase": pos.entry_signal_snapshot.get("entry_trend_phase", "NONE"),
+                    "exit_trend_direction": self._last_trend_signal.direction.value if self._last_trend_signal else "NONE",
+                    "exit_trend_phase": self._last_trend_signal.phase.value if self._last_trend_signal else "NONE",
+                    "trend_upgrade_done": int(pos.trend_upgrade_done),
+                    "trend_exit_reason": fill.reason_code if "TREND" in fill.reason_code else "",
+                    "lifecycle": pos.lifecycle,
+                    "runner_active": int(pos.runner_active),
+                }
+            )
+            if pnl_eq < 0:
+                p.loss_streak += 1
+                if p.loss_streak >= self.cfg.risk.loss_streak_limit:
+                    p.cooldown_until = current_bar.idx + self.cfg.risk.cooldown_bars
+                    p.loss_streak = 0
+            else:
+                p.loss_streak = 0
+            if pos.entry_was_sentinel and fill.reason_code == "CLOSE_SENTINEL_NOT_CONFIRMED":
+                p.cooldown_until = max(p.cooldown_until, current_bar.idx + self.cfg.sentinel_short.sentinel_cooldown_bars)
+            if pos.entry_was_crash and fill.reason_code == "CLOSE_CRASH_FAILED":
+                p.crash_short_cooldown_until = max(p.crash_short_cooldown_until, current_bar.idx + self.cfg.risk.cooldown_bars)
+        # Position state update.
+        if fill.action in (ActionType.CLOSE, ActionType.FORCE_CLOSE):
+            p.position = type(pos)()
+        elif fill.action in (ActionType.OPEN_LONG, ActionType.OPEN_SHORT, ActionType.REVERSE):
+            side = Side.LONG if fill.side == Side.LONG else Side.SHORT
+            pos.side = side
+            pos.entry_ts = fill.ts
+            pos.entry_price = fill.price
+            pos.avg_price = fill.price
+            pos.position_ratio = fill.filled_position_ratio
+            pos.notional_exposure = fill.notional
+            pos.margin_used = fill.margin_required
+            pos.leverage = self.cfg.base.fixed_leverage
+            pos.bars_held = 0
+            pos.add_count = 0
+            pos.continue_fail_count = 0
+            pos.short_reverse_confirm_count = 0
+            pos.entry_was_probe = False
+            pos.entry_was_sentinel = bool(fill.reason_code == "OPEN_SHORT_SENTINEL")
+            pos.entry_was_crash = bool(fill.reason_code == "OPEN_SHORT_CRASH")
+            pos.entry_was_slow_up = bool(fill.reason_code == "OPEN_LONG_SLOW_TREND")
+            pos.entry_was_trend_qualified = fill.reason_code in (
+                "OPEN_LONG_TREND_QUALIFIED",
+                "OPEN_SHORT_TREND_QUALIFIED",
+            )
+            pos.hold_mode = "NORMAL"
+            if pos.entry_was_crash:
+                pos.hold_mode = "CRASH"
+                pos.lifecycle = "PROBATION"
+            elif pos.entry_was_slow_up:
+                pos.hold_mode = "SLOW_UP"
+                pos.lifecycle = "PROBATION"
+            elif pos.entry_was_trend_qualified:
+                pos.hold_mode = "TREND"
+                pos.lifecycle = "TREND"
+            else:
+                pos.lifecycle = "NONE"
+            pos.trend_hold_bars = 0
+            pos.trend_break_count = 0
+            pos.sentinel_bars = 0
+            pos.crash_bars = 0
+            pos.crash_regime_id = self.portfolio.crash_regime_id
+            pos.lifecycle_bars = 0
+            pos.min_hold_until = -1
+            pos.trend_confirmed_at = -1
+            pos.exit_pending_count = 0
+            pos.best_point_exit_count = 0
+            pos.trend_pullback_count = 0
+            pos.trend_exit_votes = 0
+            pos.runner_active = False
+            pos.exhaustion_reduce_done = False
+            pos.slow_up_exit_votes = 0
+            pos.slow_up_below_ema_mid_count = 0
+            pos.slow_up_weak_model_count = 0
+            pos.entry_leg_id = self._last_segment_context.active_leg.leg_id if self._last_segment_context and self._last_segment_context.active_leg else -1
+            pos.entry_leg_type = (
+                self._last_segment_context.leg_type.value if self._last_segment_context else "NONE"
+            )
+            pos.held_through_sub_phases = []
+            pos.peak_profit_atr = 0.0
+            pos.entry_trend_direction = self._last_trend_signal.direction.value if self._last_trend_signal else "NONE"
+            pos.entry_trend_strength = self._last_trend_signal.strength.value if self._last_trend_signal else "NONE"
+            pos.trend_upgrade_done = False
+            pos.trend_position_type = "NONE"
+            pos.trend_entry_score = self._last_trend_signal.score_abs if self._last_trend_signal else 0.0
+            pos.trend_peak_score = pos.trend_entry_score
+            pos.trend_invalid_count = 0
+            stop_mult = self.cfg.risk.stop_atr_mult
+            if fill.reason_code == "OPEN_LONG_SLOW_TREND":
+                stop_mult = self.cfg.slow_up_position.stop_atr_mult
+            elif fill.reason_code in ("OPEN_LONG_TREND_QUALIFIED", "OPEN_SHORT_TREND_QUALIFIED"):
+                stop_mult = self.cfg.trend_entry_qualifier.stop_atr_mult
+            pos.stop_price = (
+                fill.price - stop_mult * current_bar.atr
+                if side == Side.LONG
+                else fill.price + stop_mult * current_bar.atr
+            )
+            pos.take_profit_1 = (
+                fill.price + self.cfg.risk.tp1_atr_mult * current_bar.atr
+                if side == Side.LONG
+                else fill.price - self.cfg.risk.tp1_atr_mult * current_bar.atr
+            )
+            pos.take_profit_2 = (
+                fill.price + self.cfg.risk.tp2_atr_mult * current_bar.atr
+                if side == Side.LONG
+                else fill.price - self.cfg.risk.tp2_atr_mult * current_bar.atr
+            )
+            if pos.entry_was_slow_up:
+                pos.min_hold_until = current_bar.idx + self.cfg.slow_up_position.min_hold_bars
+            elif pos.entry_was_trend_qualified:
+                pos.min_hold_until = current_bar.idx + self.cfg.trend_lifecycle.min_trend_hold_bars
+            pos.entry_signal_snapshot = {
+                "reason_code": fill.reason_code,
+                "entry_trend_context": "|".join(self._last_trend_context.reason_codes) if self._last_trend_context else "",
+                "entry_trend_phase": self._last_trend_signal.phase.value if self._last_trend_signal else "NONE",
+            }
+        elif fill.action in (ActionType.REDUCE, ActionType.ADD, ActionType.HOLD, ActionType.BLOCK):
+            if fill.action == ActionType.REDUCE:
+                pos.position_ratio = fill.filled_position_ratio
+                pos.notional_exposure = fill.notional
+                pos.margin_used = fill.margin_required
+                if fill.reason_code in ("REDUCE_TREND_PROFIT_LOCK", "REDUCE_TREND_EXHAUSTION", "REDUCE_SLOW_UP_PROFIT_LOCK"):
+                    pos.lifecycle = "PROTECT_PROFIT"
+                if fill.reason_code in ("REDUCE_TREND_PROFIT_LOCK", "REDUCE_SLOW_UP_PROFIT_LOCK"):
+                    pos.runner_active = True
+                if fill.reason_code == "REDUCE_TREND_EXHAUSTION":
+                    pos.exhaustion_reduce_done = True
+            elif fill.action == ActionType.ADD:
+                pos.position_ratio = fill.filled_position_ratio
+                pos.notional_exposure = fill.notional
+                pos.margin_used = fill.margin_required
+                pos.add_count += 1
+                if fill.reason_code == "UPGRADE_SENTINEL_TO_MODEL_SHORT":
+                    pos.entry_was_sentinel = False
+                    pos.hold_mode = "TREND"
+                    pos.lifecycle = "TREND"
+                    pos.entry_signal_snapshot["reason_code"] = "UPGRADE_SENTINEL_TO_MODEL_SHORT"
+                if fill.reason_code == "UPGRADE_CRASH_TO_MODEL_SHORT":
+                    pos.entry_was_crash = False
+                    pos.hold_mode = "TREND"
+                    pos.lifecycle = "TREND"
+                    pos.entry_signal_snapshot["reason_code"] = "UPGRADE_CRASH_TO_MODEL_SHORT"
+            elif fill.action == ActionType.HOLD:
+                if fill.reason_code in ("UPGRADE_TO_TREND_LONG", "UPGRADE_TO_TREND_SHORT", "UPGRADE_CRASH_TO_TREND_SHORT", "UPGRADE_SLOW_LONG_TO_TREND"):
+                    pos.hold_mode = "TREND"
+                    pos.lifecycle = "TREND"
+                    pos.trend_upgrade_done = True
+                    pos.trend_position_type = "LONG_TREND" if pos.side == Side.LONG else "SHORT_TREND"
+                    pos.trend_entry_score = self._last_trend_signal.score_abs if self._last_trend_signal else pos.trend_entry_score
+                    pos.trend_peak_score = pos.trend_entry_score
+                    pos.trend_confirmed_at = current_bar.idx
+                    min_hold = self.cfg.trend_lifecycle.strong_min_trend_hold_bars
+                    if fill.reason_code == "UPGRADE_SLOW_LONG_TO_TREND":
+                        min_hold = self.cfg.slow_up_position.min_hold_bars
+                    elif self._last_trend_signal and self._last_trend_signal.strength.value not in ("STRONG", "EXTREME"):
+                        min_hold = self.cfg.trend_lifecycle.min_trend_hold_bars
+                    pos.min_hold_until = current_bar.idx + min_hold
+                if fill.reason_code == "UPGRADE_CRASH_TO_TREND_SHORT":
+                    pos.entry_was_crash = False
+                    pos.entry_signal_snapshot["reason_code"] = "UPGRADE_CRASH_TO_TREND_SHORT"
+                if fill.reason_code == "UPGRADE_SLOW_LONG_TO_TREND":
+                    pos.entry_signal_snapshot["reason_code"] = "UPGRADE_SLOW_LONG_TO_TREND"
+                if fill.reason_code == "HOLD_CRASH_TREND_CONFIRMING":
+                    pos.lifecycle = "PROBATION"
+                if fill.reason_code == "HOLD_TREND_CONTINUATION" and self._last_trend_signal is not None:
+                    pos.trend_peak_score = max(pos.trend_peak_score, self._last_trend_signal.score_abs)
+                    pos.trend_invalid_count = self._last_trend_signal.invalid_count
+                    pos.lifecycle = "TREND"
+                if fill.reason_code == "HOLD_TREND_RUNNER":
+                    pos.lifecycle = "RUNNER"
+                if fill.reason_code == "HOLD_SLOW_UP_RUNNER":
+                    pos.lifecycle = "RUNNER"
+
+    def on_bar_close(
+        self,
+        signal: TradingSignal,
+        current_bar: Bar,
+        next_bar: Bar,
+        *,
+        best_point_signal: BestPointSignal | None = None,
+    ) -> None:
+        self.close_hist.append(current_bar.close)
+        self.high_hist.append(current_bar.high)
+        self.low_hist.append(current_bar.low)
+        self.atr_hist.append(current_bar.atr)
+        trend_context = self.trend_filter.compute(self.close_hist, self.high_hist, self.low_hist, current_bar.atr)
+        self._last_trend_context = trend_context
+        trend_signal = self.trend_signal_provider.compute(
+            close_hist=self.close_hist,
+            high_hist=self.high_hist,
+            low_hist=self.low_hist,
+            atr_hist=self.atr_hist,
+            memory=self.trend_memory,
+        )
+        self._last_trend_signal = trend_signal
+        standard_short = self.rule_engine._is_standard_short_entry(signal)
+        crash_context = self.crash_detector.compute(
+            self.close_hist,
+            self.high_hist,
+            self.low_hist,
+            self.atr_hist,
+            signal,
+            standard_open_short=standard_short,
+            is_flat=self.portfolio.position.is_flat,
+        )
+        self._last_crash_context = crash_context
+        slow_context = self.slow_uptrend_detector.compute(
+            self.close_hist,
+            self.high_hist,
+            self.low_hist,
+            current_bar.atr,
+            p_risk=signal.p_risk,
+            p_flat=signal.p_flat,
+        )
+        self._last_slow_context = slow_context
+        segment_context = self.trend_segment_engine.update(
+            bar_idx=current_bar.idx,
+            high=current_bar.high,
+            low=current_bar.low,
+            close=current_bar.close,
+            atr=current_bar.atr,
+            trend_signal=trend_signal,
+            slow_ctx=slow_context,
+            crash_ctx=crash_context,
+            is_model_blind=bool(crash_context.is_model_blind_crash),
+        )
+        self._last_segment_context = segment_context
+        trend_bias = self.trend_bias_builder.build(
+            trend_signal=trend_signal,
+            segment_context=segment_context,
+            slow_context=slow_context,
+            crash_context=crash_context,
+            trend_context=trend_context,
+        )
+        self._last_trend_bias = trend_bias
+        trend_entry_qualification = self.trend_entry_qualifier.compute(
+            trend_signal=trend_signal,
+            segment_context=segment_context,
+            slow_context=slow_context,
+            crash_context=crash_context,
+        )
+        self._last_trend_entry_qualification = trend_entry_qualification
+        risk_budget = self.risk_manager.compute_risk_budget(self.portfolio, bar_index=current_bar.idx)
+        self._last_risk_budget = risk_budget
+        p = self.portfolio
+        if crash_context.is_crash:
+            if not p.crash_regime_active:
+                p.crash_regime_active = True
+                p.crash_regime_id += 1
+                p.crash_short_used_in_regime = False
+                p.crash_release_count = 0
+        else:
+            p.crash_release_count += 1
+            if p.crash_release_count >= self.cfg.crash.regime_release_bars:
+                p.crash_regime_active = False
+                p.crash_short_used_in_regime = False
+                p.crash_release_count = 0
+        if trend_context.is_downtrend and not self._downtrend_regime_active:
+            self._downtrend_regime_active = True
+            self._sentinel_used_in_regime = False
+        elif not trend_context.is_downtrend:
+            self._downtrend_regime_active = False
+        self.portfolio.update_time_gates(
+            current_bar.ts,
+            day_drawdown_stop=self.cfg.risk.day_drawdown_stop,
+            week_drawdown_defensive=self.cfg.risk.week_drawdown_defensive,
+        )
+        self._mark_to_market(current_bar)
+        if not self.portfolio.position.is_flat:
+            self.portfolio.position.bars_held += 1
+            self.portfolio.position.lifecycle_bars += 1
+            if self.portfolio.position.hold_mode == "TREND":
+                self.portfolio.position.trend_hold_bars += 1
+                if self._last_segment_context is not None:
+                    sp = self._last_segment_context.sub_phase.value
+                    if sp not in self.portfolio.position.held_through_sub_phases:
+                        self.portfolio.position.held_through_sub_phases.append(sp)
+                self.portfolio.position.trend_peak_score = max(
+                    self.portfolio.position.trend_peak_score,
+                    trend_signal.score_abs,
+                )
+                self.portfolio.position.trend_invalid_count = trend_signal.invalid_count
+            if self.portfolio.position.entry_was_sentinel:
+                self.portfolio.position.sentinel_bars += 1
+            if self.portfolio.position.entry_was_crash:
+                self.portfolio.position.crash_bars += 1
+        if not signal.is_valid:
+            action = TradingAction(ActionType.BLOCK, Side.FLAT, signal.reason_code or "INVALID_SIGNAL", blocked_by="signal")
+            self.logger.record_decision(
+                signal,
+                action,
+                self.portfolio,
+                trend_context=trend_context,
+                trend_signal=trend_signal,
+                crash_context=crash_context,
+                best_point_signal=best_point_signal,
+                blocked_reason=action.reason_code,
+                slow_context=slow_context,
+                segment_context=segment_context,
+                trend_bias=trend_bias,
+                risk_budget=risk_budget,
+                decision_scope=self.cfg.trend_bias.decision_scope if self.cfg.trend_bias.enabled else "",
+                trend_entry_qualification=trend_entry_qualification,
+            )
+            self.logger.record_equity(current_bar.ts, self.portfolio.equity)
+            return
+        risk_event = self.risk_manager.check_pre_decision_risk(
+            signal,
+            self.portfolio,
+            current_bar.idx,
+            current_bar.close,
+            trend_context=trend_context,
+            trend_signal=trend_signal,
+            slow_context=slow_context,
+            trend_bias=trend_bias,
+        )
+        if risk_event.force_close:
+            action = TradingAction(ActionType.CLOSE, Side.FLAT, risk_event.reason, blocked_by="risk")
+        elif risk_event.reason == "REDUCE_RISK_PROB_HIGH" and not self.portfolio.position.is_flat:
+            action = TradingAction(ActionType.REDUCE, self.portfolio.position.side, risk_event.reason, blocked_by="risk")
+        elif risk_event.block_open and self.portfolio.position.is_flat:
+            action = TradingAction(ActionType.BLOCK, Side.FLAT, risk_event.reason, blocked_by="risk")
+        elif (
+            self.cfg.trend_bias.enabled
+            and self.cfg.trend_bias.decision_scope == "full"
+            and not self.portfolio.position.is_flat
+        ):
+            pos_side = self.portfolio.position.side
+            if pos_side == Side.LONG and trend_bias.force_exit_long:
+                action = TradingAction(ActionType.CLOSE, Side.FLAT, "FORCE_EXIT_BIAS_LEG_END", blocked_by="trend_bias")
+            elif pos_side == Side.SHORT and trend_bias.force_exit_short:
+                action = TradingAction(ActionType.CLOSE, Side.FLAT, "FORCE_EXIT_BIAS_LEG_END", blocked_by="trend_bias")
+            else:
+                action = self.rule_engine.decide(
+                    signal,
+                    self.portfolio,
+                    bar_index=current_bar.idx,
+                    trend_context=trend_context,
+                    crash_context=crash_context,
+                    trend_signal=trend_signal,
+                    best_point_signal=best_point_signal,
+                    slow_context=slow_context,
+                    segment_context=segment_context,
+                    trend_bias=trend_bias,
+                    risk_budget=risk_budget,
+                    trend_entry_qualification=trend_entry_qualification,
+                )
+        else:
+            action = self.rule_engine.decide(
+                signal,
+                self.portfolio,
+                bar_index=current_bar.idx,
+                trend_context=trend_context,
+                crash_context=crash_context,
+                trend_signal=trend_signal,
+                best_point_signal=best_point_signal,
+                slow_context=slow_context,
+                segment_context=segment_context,
+                trend_bias=trend_bias,
+                risk_budget=risk_budget,
+                trend_entry_qualification=trend_entry_qualification,
+            )
+        if action.reason_code in ("BLOCK_COUNTER_TREND_LONG", "BLOCK_COUNTER_TREND_SHORT"):
+            self.legacy_trend_direct_block_count += 1
+        if action.reason_code == "BLOCK_LONG_DOWNTREND":
+            self.legacy_trend_direct_read_count += 1
+        if action.action in (ActionType.OPEN_LONG, ActionType.OPEN_SHORT):
+            if action.target_side == Side.LONG and trend_bias.counter_level_long == CounterTrendLevel.HARD_BLOCK:
+                self.hard_counter_open_count += 1
+            if action.target_side == Side.SHORT and trend_bias.counter_level_short == CounterTrendLevel.HARD_BLOCK:
+                self.hard_counter_open_count += 1
+        if action.reason_code == "ADD_TREND_CONTINUATION":
+            self.trend_add_candidate_count += 1
+            self.trend_add_risk_evaluated_count += 1
+            if risk_budget is not None:
+                side = self.portfolio.position.side
+                allowed = risk_budget.allow_add_long if side == Side.LONG else risk_budget.allow_add_short
+                if not allowed:
+                    self.trend_add_rejected_by_risk_count += 1
+                else:
+                    self.trend_add_allowed_count += 1
+        if action.reason_code == "OPEN_SHORT_CRASH":
+            if self.portfolio.crash_short_used_in_regime and self.cfg.crash_short.same_regime_once:
+                action = TradingAction(ActionType.BLOCK, Side.FLAT, "BLOCK_CRASH_ONCE_PER_REGIME", blocked_by="crash")
+            if current_bar.idx <= self.portfolio.crash_short_cooldown_until:
+                action = TradingAction(ActionType.BLOCK, Side.FLAT, "BLOCK_CRASH_COOLDOWN", blocked_by="crash")
+        if action.reason_code == "OPEN_SHORT_SENTINEL" and self._sentinel_used_in_regime:
+            action = TradingAction(ActionType.BLOCK, Side.FLAT, "BLOCK_SENTINEL_ONCE_PER_REGIME", blocked_by="trend")
+        action = self.risk_manager.validate_action(action, signal, self.portfolio, trend_context=trend_context)
+        sized = self.position_sizer.apply(
+            action,
+            signal,
+            self.portfolio,
+            trend_context=trend_context,
+            trend_signal=trend_signal,
+            slow_context=slow_context,
+            trend_bias=trend_bias,
+        )
+        if sized.position_ratio > self.cfg.base.max_position_ratio + 1e-12:
+            self.position_limit_violations += 1
+        fill = self.execution_engine.execute(
+            sized,
+            ts=next_bar.ts,
+            next_open=next_bar.open,
+            current_position_ratio=self.portfolio.position.position_ratio,
+        )
+        self.logger.record_decision(
+            signal,
+            action,
+            self.portfolio,
+            trend_context=trend_context,
+            trend_signal=trend_signal,
+            crash_context=crash_context,
+            best_point_signal=best_point_signal,
+            blocked_reason=action.reason_code if action.action == ActionType.BLOCK else "",
+            slow_context=slow_context,
+            segment_context=segment_context,
+            trend_bias=trend_bias,
+            risk_budget=risk_budget,
+            decision_scope=self.cfg.trend_bias.decision_scope if self.cfg.trend_bias.enabled else "",
+            trend_entry_qualification=trend_entry_qualification,
+        )
+        self.logger.record_order(
+            {
+                "ts": next_bar.ts,
+                "action": sized.action.value,
+                "side": sized.target_side.value,
+                "position_ratio": sized.position_ratio,
+                "notional_exposure": sized.notional_exposure,
+                "margin_required": sized.margin_required,
+                "reason_code": sized.reason_code,
+            }
+        )
+        self.logger.record_fill(fill)
+        self._apply_fill(fill, current_bar)
+        if fill.reason_code == "OPEN_SHORT_SENTINEL":
+            self._sentinel_used_in_regime = True
+        if fill.reason_code == "OPEN_SHORT_CRASH":
+            self.portfolio.crash_short_used_in_regime = True
+        self.logger.record_equity(next_bar.ts, self.portfolio.equity)
+
