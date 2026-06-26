@@ -25,6 +25,8 @@ PIP="$RUNTIME/venv/bin/pip"
 
 # ensure deps
 $PIP install -i https://pypi.tuna.tsinghua.edu.cn/simple -r "$RUNTIME/requirements.txt" -q
+$PIP install -i https://pypi.tuna.tsinghua.edu.cn/simple -e "$ROOT[all]" -q 2>/dev/null || \
+  $PIP install -i https://pypi.tuna.tsinghua.edu.cn/simple -e "$ROOT" -q 2>/dev/null || true
 
 echo "[import] bootstrap archive backends..."
 $PY "$WEBSITE/scripts/import_backtest.py" --all || true
@@ -40,8 +42,13 @@ $PY -m uvicorn monitor.api.app:app --host 0.0.0.0 --port "$API_PORT" \
 API_PID=$!
 
 sleep 2
+ENGINE_FLAG=""
+if [[ "${MONITOR_WITH_ENGINE:-0}" == "1" ]]; then
+  ENGINE_FLAG="--with-engine"
+  echo "[runner] live engine enabled (MONITOR_WITH_ENGINE=1)"
+fi
 echo "[runner] starting bar_runner..."
-$PY "$RUNTIME/bar_runner.py" --api-url "http://127.0.0.1:$API_PORT" \
+$PY "$RUNTIME/bar_runner.py" --api-url "http://127.0.0.1:$API_PORT" $ENGINE_FLAG \
   > "$RUNTIME/logs/bar_runner.log" 2>&1 &
 RUNNER_PID=$!
 

@@ -12,6 +12,12 @@ chmod +x website/runtime/start.sh
 
 浏览器打开：**http://127.0.0.1:8765/**
 
+启用纸交易引擎（需 torch + prod checkpoint）：
+
+```bash
+MONITOR_WITH_ENGINE=1 ./website/runtime/start.sh
+```
+
 ## 目录
 
 | 路径 | 说明 |
