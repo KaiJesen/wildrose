@@ -1,6 +1,6 @@
 # wildrose 交易监控网站
 
-一期实现：**实时行情**（优先 `binance_futures`，不可达时回退 `binance_vision`）+ 运行态监控 + Dashboard + K 线交易标注。
+一期实现：**实时行情**（永续 `binance_vision` 归档 + `fapi` / `data-api.binance.vision` 尾部补齐）+ 运行态监控 + Dashboard + K 线交易标注。
 
 ## 快速启动
 

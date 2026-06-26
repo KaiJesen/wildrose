@@ -16,9 +16,35 @@ logger = logging.getLogger(__name__)
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from market_data.schema import COL_CLOSE, COL_HIGH, COL_LOW, COL_OPEN, COL_TIME, COL_VOLUME  # noqa: E402
+from market_data.schema import COL_CLOSE, COL_CLOSE_TIME, COL_HIGH, COL_LOW, COL_OPEN, COL_TIME, COL_VOLUME  # noqa: E402
+from market_data.sources.binance_data_api import BinanceDataApiKlineProvider  # noqa: E402
 from market_data.sources.binance_futures import BinanceFuturesKlineProvider  # noqa: E402
 from market_data.sources.binance_vision import BinanceVisionKlineProvider  # noqa: E402
+
+# 尾部 K 线：优先 fapi 永续，不可达时用 data-api 现货 REST（国内可直连）
+_TAIL_LIMIT = 72
+_HISTORY_DAYS = 30
+
+
+def _filter_closed_bars(df: pd.DataFrame) -> pd.DataFrame:
+    """去掉尚未收盘的最后一根 K 线。"""
+    if df.empty:
+        return df
+    now = pd.Timestamp.now(tz="UTC")
+    if COL_CLOSE_TIME in df.columns:
+        return df[df[COL_CLOSE_TIME] <= now].reset_index(drop=True)
+    return df.iloc[:-1].reset_index(drop=True)
+
+
+def _merge_ohlcv(primary: pd.DataFrame, supplemental: pd.DataFrame) -> pd.DataFrame:
+    """按时间合并；primary（vision 永续归档）优先于 supplemental（尾部 REST）。"""
+    if primary.empty:
+        return supplemental.reset_index(drop=True)
+    if supplemental.empty:
+        return primary.reset_index(drop=True)
+    out = pd.concat([primary, supplemental], ignore_index=True)
+    out = out.sort_values(COL_TIME).drop_duplicates(subset=[COL_TIME], keep="first")
+    return out.reset_index(drop=True)
 
 
 class MarketDataService:
@@ -26,26 +52,87 @@ class MarketDataService:
         self.backend_id = backend_id
         self.symbol = symbol
         self.interval = interval
-        self._live = BinanceFuturesKlineProvider(
-            verbose_retry=False, retries=2, request_timeout=8.0,
-        )
         self._archive = BinanceVisionKlineProvider(
             verbose=False, retries=2, request_timeout=20.0,
         )
+        self._data_api = BinanceDataApiKlineProvider(
+            retries=2, request_timeout=12.0,
+        )
+        self._last_tail_source: str | None = None
 
-    def _fetch_recent(self, limit: int = 200) -> pd.DataFrame:
-        end = datetime.now(timezone.utc)
-        start = end - timedelta(days=30)
-        df = pd.DataFrame()
+    @property
+    def last_tail_source(self) -> str | None:
+        return self._last_tail_source
+
+    def _fetch_tail(self) -> pd.DataFrame:
+        """最近几根 K 线：fapi 永续 → data-api 现货。"""
+        self._last_tail_source = None
         try:
-            df = self._live.fetch_kline(self.symbol, self.interval, start, end)
+            df = BinanceFuturesKlineProvider.fetch_recent_with_fallback(
+                self.symbol, self.interval, limit=_TAIL_LIMIT,
+                request_timeout=4.0, retries=1,
+            )
+            if not df.empty:
+                self._last_tail_source = "binance_futures"
+                return _filter_closed_bars(df)
         except Exception as e:
-            logger.info("fapi unavailable, fallback to binance_vision: %s", e)
+            logger.info("fapi tail unavailable: %s", e)
+
+        try:
+            df = self._data_api.fetch_recent_klines(
+                self.symbol, self.interval, limit=_TAIL_LIMIT,
+            )
+            if not df.empty:
+                self._last_tail_source = "binance_data_api"
+                logger.info(
+                    "using data-api spot tail for %s (fapi unreachable); "
+                    "prices track USDT-M closely",
+                    self.symbol,
+                )
+                return _filter_closed_bars(df)
+        except Exception as e:
+            logger.warning("data-api tail failed: %s", e)
+        return pd.DataFrame()
+
+    def _fetch_full_history(self, limit: int = 200) -> pd.DataFrame:
+        """vision 永续归档 + REST 尾部（冷启动 / 回填）。"""
+        end = datetime.now(timezone.utc)
+        start = end - timedelta(days=_HISTORY_DAYS)
+
+        df_hist = pd.DataFrame()
+        try:
+            df_hist = self._archive.fetch_kline(self.symbol, self.interval, start, end)
+        except Exception as e:
+            logger.warning("vision history fetch failed: %s", e)
+
+        df_tail = self._fetch_tail()
+        df = _merge_ohlcv(df_hist, df_tail)
         if df.empty:
-            df = self._archive.fetch_kline(self.symbol, self.interval, start, end)
+            try:
+                live = BinanceFuturesKlineProvider(
+                    verbose_retry=False, retries=2, request_timeout=8.0,
+                )
+                df = live.fetch_kline(self.symbol, self.interval, start, end)
+                self._last_tail_source = "binance_futures"
+            except Exception as e:
+                logger.warning("full fapi fetch failed: %s", e)
         if df.empty:
             return df
-        return df.tail(limit).reset_index(drop=True)
+        return _filter_closed_bars(df).tail(limit).reset_index(drop=True)
+
+    def _fetch_recent(self, limit: int = 200) -> pd.DataFrame:
+        """常规轮询只拉尾部 REST；库内不足时再全量回填。"""
+        with connect() as conn:
+            n = conn.execute(
+                "SELECT COUNT(*) AS c FROM ohlcv_bars WHERE backend_id=?",
+                (self.backend_id,),
+            ).fetchone()["c"]
+        if n < 48:
+            return self._fetch_full_history(limit)
+        df_tail = self._fetch_tail()
+        if df_tail.empty:
+            return self._fetch_full_history(limit)
+        return df_tail.tail(limit).reset_index(drop=True)
 
     def poll_and_store(self) -> str | None:
         """Fetch latest bars from Binance futures; return new bar ts if any."""
@@ -95,6 +182,7 @@ class MarketDataService:
                             "low": float(df.iloc[-1][COL_LOW]),
                             "close": float(df.iloc[-1][COL_CLOSE]),
                             "volume": float(df.iloc[-1][COL_VOLUME]),
+                            "tail_source": self._last_tail_source,
                         },
                     },
                 )

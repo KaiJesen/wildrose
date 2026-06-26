@@ -59,6 +59,12 @@ class BinanceFuturesKlineProvider(KlineProvider):
     DEFAULT_BASE_URL = "https://fapi.binance.com"
     # 部分网络环境下可改用其它端点，如 https://fapi.binance.com、https://www.binance.com 等
     FALLBACK_BASE_URL = "https://www.binance.com"
+    FAPI_BASE_URLS = (
+        "https://fapi.binance.com",
+        "https://fapi1.binance.com",
+        "https://fapi2.binance.com",
+        "https://fapi3.binance.com",
+    )
 
     def __init__(
         self,
@@ -130,6 +136,44 @@ class BinanceFuturesKlineProvider(KlineProvider):
             ) from e
         raw = self._rows_to_dataframe(rows)
         return normalize_ohlcv_df(raw)
+
+    def fetch_recent_klines(self, symbol: str, interval: str, *, limit: int = 100) -> pd.DataFrame:
+        """拉最近 limit 根合约 K 线（单次 REST，无分页）。"""
+        norm_interval = self._normalize_interval(interval)
+        sym = symbol.strip().upper()
+        lim = max(1, min(int(limit), self.MAX_LIMIT))
+        rows = self._fetch_one_batch(sym, norm_interval, 0, 2**62, lim)
+        return normalize_ohlcv_df(self._rows_to_dataframe(rows))
+
+    @classmethod
+    def fetch_recent_with_fallback(
+        cls,
+        symbol: str,
+        interval: str,
+        *,
+        limit: int = 100,
+        request_timeout: float = 8.0,
+        retries: int = 2,
+    ) -> pd.DataFrame:
+        """依次尝试多个 fapi 域名，返回首个成功的结果。"""
+        last_err: Exception | None = None
+        for base in cls.FAPI_BASE_URLS:
+            try:
+                provider = cls(
+                    base_url=base,
+                    verbose_retry=False,
+                    retries=retries,
+                    request_timeout=request_timeout,
+                )
+                df = provider.fetch_recent_klines(symbol, interval, limit=limit)
+                if not df.empty:
+                    return df
+            except Exception as e:
+                last_err = e
+                continue
+        if last_err:
+            raise last_err
+        return pd.DataFrame()
 
     def _normalize_interval(self, interval: str) -> str:
         key = interval.strip().lower()

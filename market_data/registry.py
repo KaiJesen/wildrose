@@ -23,6 +23,9 @@ _ALIASES: dict[str, str] = {
     "vision": "binance_vision",
     "binance_archive": "binance_vision",
     "binance_history": "binance_vision",
+    # Binance Data API（data-api.binance.vision，现货 REST 尾部补齐）
+    "data_api": "binance_data_api",
+    "binance_data_api": "binance_data_api",
 }
 
 
@@ -37,10 +40,12 @@ def _ensure_default_providers() -> None:
     from market_data.sources.akshare_eastmoney import AkShareEastmoneyKlineProvider
     from market_data.sources.binance_futures import BinanceFuturesKlineProvider
     from market_data.sources.binance_vision import BinanceVisionKlineProvider
+    from market_data.sources.binance_data_api import BinanceDataApiKlineProvider
 
     register_provider(AkShareEastmoneyKlineProvider)
     register_provider(BinanceFuturesKlineProvider)
     register_provider(BinanceVisionKlineProvider)
+    register_provider(BinanceDataApiKlineProvider)
 
 
 def list_kline_providers() -> list[tuple[str, str, frozenset[str]]]:
