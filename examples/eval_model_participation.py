@@ -103,6 +103,7 @@ def _build_model_from_checkpoint(checkpoint: Path, device: torch.device) -> Klin
         ns.trend_windows = [20, 60, 120]
     if not hasattr(ns, "variant"):
         ns.variant = "0"
+    use_part_attn = bool(ck_args.get("use_participation_attn", False))
     horizons = () if str(ns.variant) == "0" else (12, 24)
     auto_cfg = pattern_config_from_args(ns)
     model = KlinePatternPredictor(
@@ -118,6 +119,7 @@ def _build_model_from_checkpoint(checkpoint: Path, device: torch.device) -> Klin
             use_cum_heads=True,
             use_horizon_return_head=True,
             use_participation_heads=True,
+            use_participation_attn=use_part_attn,
             leg_align_horizons=horizons,
         )
     ).to(device)

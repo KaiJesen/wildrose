@@ -1,0 +1,31 @@
+{
+  "experiment": "026_phase0_c3",
+  "init_checkpoint": "prod/v1.1.1/checkpoint/market_state_best.pt",
+  "labels_dir": "data/labels/leg_participation",
+  "constraint_profile": "constrained",
+  "use_participation_attn": true,
+  "train_defaults": {
+    "stride": 1,
+    "positive_oversample": 30,
+    "participation_weight": 2.0,
+    "epochs": 15,
+    "early_stop_patience": 6,
+    "batch_size": 32,
+    "lr": 0.0003,
+    "auto_baseline_ic": true,
+    "cum_ic_min_ratio": 0.92,
+    "early_stop_metric": "composite_v026",
+    "part_auc_floor": 0.58,
+    "composite_part_weight": 0.6,
+    "composite_ic_weight": 0.4
+  },
+  "checkpoint_dir": "checkpoints/026_phase0_c3",
+  "report_dir": "reports/026_phase0_c3",
+  "gates": {
+    "b0_return": 0.0901,
+    "b0_coverage": 0.267,
+    "b0_teq": 3,
+    "participation_auc_valid_min": 0.60,
+    "cum_return_ic_degradation_max": 0.08
+  }
+}

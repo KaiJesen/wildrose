@@ -1093,7 +1093,13 @@ def collect_leg_align_head_params(model: nn.Module) -> list[nn.Parameter]:
     if msh is None:
         return []
     params: list[nn.Parameter] = []
-    for attr in ("participation_logit_long", "participation_logit_short", "hz_return_heads"):
+    for attr in (
+        "participation_attn_long",
+        "participation_attn_short",
+        "participation_logit_long",
+        "participation_logit_short",
+        "hz_return_heads",
+    ):
         sub = getattr(msh, attr, None)
         if sub is None:
             continue

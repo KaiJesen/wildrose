@@ -36,6 +36,7 @@ class PatternPredictorConfig:
     detach_risk_vol_heads: bool = False
     return_direction_hidden_mult: float = 1.0
     use_participation_heads: bool = False
+    use_participation_attn: bool = False
     leg_align_horizons: tuple[int, ...] = ()
 
 
@@ -111,6 +112,7 @@ class MarketStateHead(nn.Module):
         detach_risk_vol_heads: bool = False,
         return_direction_hidden_mult: float = 1.0,
         use_participation_heads: bool = False,
+        use_participation_attn: bool = False,
         leg_align_horizons: tuple[int, ...] = (12, 24, 48),
     ) -> None:
         super().__init__()
@@ -121,6 +123,7 @@ class MarketStateHead(nn.Module):
         self.use_horizon_return_head = use_horizon_return_head
         self.detach_risk_vol_heads = detach_risk_vol_heads
         self.use_participation_heads = use_participation_heads
+        self.use_participation_attn = use_participation_attn
         self.leg_align_horizons = tuple(leg_align_horizons)
         hidden = max(8, int(d_model * return_direction_hidden_mult))
         self.return_head = nn.Sequential(
@@ -150,13 +153,24 @@ class MarketStateHead(nn.Module):
             nn.Linear(d_model // 2, horizon * risk_classes),
         )
         part_hidden = max(8, d_model // 2)
+        use_mlp_part = use_participation_heads and not use_participation_attn
+        self.participation_attn_long = (
+            ParticipationAttn(d_model=d_model, n_heads=n_heads)
+            if use_participation_heads and use_participation_attn
+            else None
+        )
+        self.participation_attn_short = (
+            ParticipationAttn(d_model=d_model, n_heads=n_heads)
+            if use_participation_heads and use_participation_attn
+            else None
+        )
         self.participation_logit_long = (
             nn.Sequential(
                 nn.Linear(d_model, part_hidden),
                 nn.GELU(),
                 nn.Linear(part_hidden, 1),
             )
-            if use_participation_heads
+            if use_mlp_part
             else None
         )
         self.participation_logit_short = (
@@ -165,7 +179,7 @@ class MarketStateHead(nn.Module):
                 nn.GELU(),
                 nn.Linear(part_hidden, 1),
             )
-            if use_participation_heads
+            if use_mlp_part
             else None
         )
         self.hz_return_heads = (
@@ -208,9 +222,13 @@ class MarketStateHead(nn.Module):
         participation_logit_long = None
         participation_logit_short = None
         hz_return_pred: dict[int, torch.Tensor] | None = None
-        if self.participation_logit_long is not None:
+        if self.participation_attn_long is not None:
+            if tokens is None or seg_mask is None:
+                raise ValueError("tokens/seg_mask required when use_participation_attn=True")
+            participation_logit_long = self.participation_attn_long(pooled, tokens, seg_mask)
+            participation_logit_short = self.participation_attn_short(pooled, tokens, seg_mask)
+        elif self.participation_logit_long is not None:
             participation_logit_long = self.participation_logit_long(pooled).squeeze(-1)
-        if self.participation_logit_short is not None:
             participation_logit_short = self.participation_logit_short(pooled).squeeze(-1)
         if self.hz_return_heads is not None:
             hz_return_pred = {int(h): head(pooled).squeeze(-1) for h, head in self.hz_return_heads.items()}
@@ -226,6 +244,39 @@ class MarketStateHead(nn.Module):
             participation_logit_short=participation_logit_short,
             hz_return_pred=hz_return_pred,
         )
+
+
+class ParticipationAttn(nn.Module):
+    """C3 cross-attention participation head (single scalar logit per side).
+
+    Mirrors ``HorizonReturnHead`` attention pattern: learned query attends over
+  segment tokens. ``seg_mask`` True marks valid segments; padding uses
+  ``key_padding_mask=~seg_mask`` (026 C1 clarification).
+    """
+
+    def __init__(self, d_model: int, n_heads: int) -> None:
+        super().__init__()
+        self.query = nn.Parameter(torch.randn(1, 1, d_model) * 0.02)
+        self.cross_attn = nn.MultiheadAttention(d_model, n_heads, batch_first=True)
+        self.norm = nn.LayerNorm(d_model)
+        hidden = max(8, d_model // 2)
+        self.out = nn.Sequential(
+            nn.Linear(d_model, hidden),
+            nn.GELU(),
+            nn.Linear(hidden, 1),
+        )
+
+    def forward(
+        self,
+        pooled: torch.Tensor,
+        tokens: torch.Tensor,
+        seg_mask: torch.Tensor,
+    ) -> torch.Tensor:
+        b = pooled.size(0)
+        q = self.query.expand(b, -1, -1) + pooled.unsqueeze(1)
+        h, _ = self.cross_attn(q, tokens, tokens, key_padding_mask=~seg_mask)
+        h = self.norm(h + q)
+        return self.out(h).reshape(b)
 
 
 class HorizonReturnHead(nn.Module):
@@ -344,6 +395,7 @@ class KlinePatternPredictor(nn.Module):
                 detach_risk_vol_heads=cfg.detach_risk_vol_heads,
                 return_direction_hidden_mult=cfg.return_direction_hidden_mult,
                 use_participation_heads=cfg.use_participation_heads,
+                use_participation_attn=cfg.use_participation_attn,
                 leg_align_horizons=cfg.leg_align_horizons,
             )
             if cfg.use_market_state_head

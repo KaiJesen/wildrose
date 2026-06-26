@@ -1,0 +1,19 @@
+{
+  "phase0_pass": true,
+  "b0": {
+    "return": 0.09006036690106223,
+    "coverage": 0.26666666666666666,
+    "teq_open": 3,
+    "pass": true,
+    "ret_ok": true,
+    "cov_ok": true,
+    "teq_ok": true,
+    "checkpoint_hash": "82ca51cf637a258c"
+  },
+  "c3": {
+    "valid_participation_auc": 0.6950063211125158,
+    "ic_degradation": 0.05810424872075191,
+    "pass": true,
+    "checkpoint_hash": "0321f86630482186"
+  }
+}
