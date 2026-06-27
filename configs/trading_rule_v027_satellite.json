@@ -1,0 +1,21 @@
+{
+  "satellite": {
+    "enabled": true,
+    "max_position_ratio": 0.08,
+    "max_hold_bars": 48,
+    "max_daily_opens": 2,
+    "long_entry_threshold": 0.60,
+    "short_entry_threshold": 0.60,
+    "exit_prob_threshold": 0.70,
+    "hold_min_prob": 0.30,
+    "min_opportunity_roi": 0.0,
+    "min_pred_cum_ret_5_long": 0.0,
+    "risk_open_max": 0.40,
+    "stop_atr_mult": 1.4,
+    "require_core_flat": true
+  },
+  "_meta": {
+    "checkpoint_017": "checkpoints/017_best_point_signal/017c_best_point_major_legs/best.pt",
+    "phase": "027_phase2"
+  }
+}

@@ -1,0 +1,45 @@
+{
+  "split": "valid",
+  "core_only": {
+    "name": "core_only",
+    "split": "valid",
+    "satellite_mode": "off",
+    "return": -0.04117698315381557,
+    "max_drawdown": -0.04300177774037148,
+    "trade_count": 22,
+    "satellite_trade_count": 0,
+    "sharpe": -2.212801697146077,
+    "satellite_pnl": 0.0,
+    "phase1_baseline_return": -0.06213089324306098
+  },
+  "satellite_only": {
+    "name": "satellite_only",
+    "split": "valid",
+    "satellite_mode": "only",
+    "return": -0.0432424498987789,
+    "max_drawdown": -0.10396509605693005,
+    "trade_count": 13,
+    "satellite_trade_count": 13,
+    "sharpe": -1.3462174384373273,
+    "satellite_pnl": -0.026602449898779527
+  },
+  "core_sat_combined": {
+    "name": "core_sat",
+    "split": "valid",
+    "satellite_mode": "combined",
+    "return": -0.11471963513063665,
+    "max_drawdown": -0.14054810757859704,
+    "trade_count": 33,
+    "satellite_trade_count": 11,
+    "sharpe": -3.6532987604875555,
+    "satellite_pnl": -0.05946265197682156
+  },
+  "gates": {
+    "satellite_trades_min": 8,
+    "satellite_sharpe_min": 0.0,
+    "combined_return_ge_core": true
+  },
+  "satellite_valid_pass": false,
+  "combined_valid_pass": false,
+  "phase2_pass": false
+}

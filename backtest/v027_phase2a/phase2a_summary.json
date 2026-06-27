@@ -1,0 +1,21 @@
+{
+  "split": "valid",
+  "phase": "027_phase2a",
+  "satellite_config": "configs/trading_rule_v027_satellite_phase2a.json",
+  "architect_gate": {
+    "subwindow_return_gt_zero": true,
+    "min_trades_in_window": 1
+  },
+  "core_only_return": -0.04117698315381557,
+  "watch_slow_bars": 523,
+  "satellite_trade_count": 0,
+  "satellite_trades_in_watch_window": 0,
+  "subwindow_return": 0.0,
+  "satellite_total_pnl": 0.0,
+  "combined_return": -0.04117698315381557,
+  "core_return": -0.04117698315381557,
+  "combined_delta_vs_core": 0.0,
+  "phase2a_pass": false,
+  "verdict": "no_signal",
+  "project_status": "close_027"
+}

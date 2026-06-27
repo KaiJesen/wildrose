@@ -1,0 +1,25 @@
+{
+  "split": "test",
+  "checkpoint": "/home/jack/00_workspace/02_python/checkpoints/0065a_leg_align_c1_pw20/market_state_best.pt",
+  "checkpoint_hash": "82ca51cf637a258c",
+  "config": "configs/trading_rule_v024_phase1c_teq_0065a_c1_pw20.json",
+  "b0_smoke": {},
+  "b0_inline": {
+    "return": 0.09006036690106223,
+    "coverage": 0.26666666666666666,
+    "teq_open": 3,
+    "ret_ok": true,
+    "cov_ok": true,
+    "teq_ok": true,
+    "pass": true
+  },
+  "equivalence": {
+    "equity_bars": 1308,
+    "equity_max_abs_diff": 0.0,
+    "trade_count_legacy": 13,
+    "trade_count_dual": 13,
+    "decision_reason_mismatches": 0,
+    "pass": true
+  },
+  "phase0_pass": true
+}

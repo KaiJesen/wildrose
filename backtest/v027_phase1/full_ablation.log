@@ -1,0 +1,55 @@
+/home/jack/00_workspace/02_python/transformer_kit/auto_segment_encoder.py:275: UserWarning: enable_nested_tensor is True, but self.use_nested_tensor is False because encoder_layer.norm_first was True
+  self.encoder = nn.TransformerEncoder(layer, num_layers=1)
+/home/jack/00_workspace/02_python/transformer_kit/segment_encoder.py:51: UserWarning: enable_nested_tensor is True, but self.use_nested_tensor is False because encoder_layer.norm_first was True
+  self.encoder = nn.TransformerEncoder(layer, num_layers=cfg.n_layers)
+/home/jack/00_workspace/02_python/transformer_kit/causal_transformer.py:44: UserWarning: enable_nested_tensor is True, but self.use_nested_tensor is False because encoder_layer.norm_first was True
+  self.encoder = nn.TransformerEncoder(layer, num_layers=cfg.n_layers)
+/home/jack/00_workspace/02_python/transformer_kit/auto_segment_encoder.py:275: UserWarning: enable_nested_tensor is True, but self.use_nested_tensor is False because encoder_layer.norm_first was True
+  self.encoder = nn.TransformerEncoder(layer, num_layers=1)
+/home/jack/00_workspace/02_python/transformer_kit/segment_encoder.py:51: UserWarning: enable_nested_tensor is True, but self.use_nested_tensor is False because encoder_layer.norm_first was True
+  self.encoder = nn.TransformerEncoder(layer, num_layers=cfg.n_layers)
+/home/jack/00_workspace/02_python/transformer_kit/causal_transformer.py:44: UserWarning: enable_nested_tensor is True, but self.use_nested_tensor is False because encoder_layer.norm_first was True
+  self.encoder = nn.TransformerEncoder(layer, num_layers=cfg.n_layers)
+/home/jack/00_workspace/02_python/transformer_kit/auto_segment_encoder.py:275: UserWarning: enable_nested_tensor is True, but self.use_nested_tensor is False because encoder_layer.norm_first was True
+  self.encoder = nn.TransformerEncoder(layer, num_layers=1)
+/home/jack/00_workspace/02_python/transformer_kit/segment_encoder.py:51: UserWarning: enable_nested_tensor is True, but self.use_nested_tensor is False because encoder_layer.norm_first was True
+  self.encoder = nn.TransformerEncoder(layer, num_layers=cfg.n_layers)
+/home/jack/00_workspace/02_python/transformer_kit/causal_transformer.py:44: UserWarning: enable_nested_tensor is True, but self.use_nested_tensor is False because encoder_layer.norm_first was True
+  self.encoder = nn.TransformerEncoder(layer, num_layers=cfg.n_layers)
+/home/jack/00_workspace/02_python/transformer_kit/auto_segment_encoder.py:275: UserWarning: enable_nested_tensor is True, but self.use_nested_tensor is False because encoder_layer.norm_first was True
+  self.encoder = nn.TransformerEncoder(layer, num_layers=1)
+/home/jack/00_workspace/02_python/transformer_kit/segment_encoder.py:51: UserWarning: enable_nested_tensor is True, but self.use_nested_tensor is False because encoder_layer.norm_first was True
+  self.encoder = nn.TransformerEncoder(layer, num_layers=cfg.n_layers)
+/home/jack/00_workspace/02_python/transformer_kit/causal_transformer.py:44: UserWarning: enable_nested_tensor is True, but self.use_nested_tensor is False because encoder_layer.norm_first was True
+  self.encoder = nn.TransformerEncoder(layer, num_layers=cfg.n_layers)
+/home/jack/00_workspace/02_python/transformer_kit/auto_segment_encoder.py:275: UserWarning: enable_nested_tensor is True, but self.use_nested_tensor is False because encoder_layer.norm_first was True
+  self.encoder = nn.TransformerEncoder(layer, num_layers=1)
+/home/jack/00_workspace/02_python/transformer_kit/segment_encoder.py:51: UserWarning: enable_nested_tensor is True, but self.use_nested_tensor is False because encoder_layer.norm_first was True
+  self.encoder = nn.TransformerEncoder(layer, num_layers=cfg.n_layers)
+/home/jack/00_workspace/02_python/transformer_kit/causal_transformer.py:44: UserWarning: enable_nested_tensor is True, but self.use_nested_tensor is False because encoder_layer.norm_first was True
+  self.encoder = nn.TransformerEncoder(layer, num_layers=cfg.n_layers)
+/home/jack/00_workspace/02_python/transformer_kit/auto_segment_encoder.py:275: UserWarning: enable_nested_tensor is True, but self.use_nested_tensor is False because encoder_layer.norm_first was True
+  self.encoder = nn.TransformerEncoder(layer, num_layers=1)
+/home/jack/00_workspace/02_python/transformer_kit/segment_encoder.py:51: UserWarning: enable_nested_tensor is True, but self.use_nested_tensor is False because encoder_layer.norm_first was True
+  self.encoder = nn.TransformerEncoder(layer, num_layers=cfg.n_layers)
+/home/jack/00_workspace/02_python/transformer_kit/causal_transformer.py:44: UserWarning: enable_nested_tensor is True, but self.use_nested_tensor is False because encoder_layer.norm_first was True
+  self.encoder = nn.TransformerEncoder(layer, num_layers=cfg.n_layers)
+/home/jack/00_workspace/02_python/transformer_kit/auto_segment_encoder.py:275: UserWarning: enable_nested_tensor is True, but self.use_nested_tensor is False because encoder_layer.norm_first was True
+  self.encoder = nn.TransformerEncoder(layer, num_layers=1)
+/home/jack/00_workspace/02_python/transformer_kit/segment_encoder.py:51: UserWarning: enable_nested_tensor is True, but self.use_nested_tensor is False because encoder_layer.norm_first was True
+  self.encoder = nn.TransformerEncoder(layer, num_layers=cfg.n_layers)
+/home/jack/00_workspace/02_python/transformer_kit/causal_transformer.py:44: UserWarning: enable_nested_tensor is True, but self.use_nested_tensor is False because encoder_layer.norm_first was True
+  self.encoder = nn.TransformerEncoder(layer, num_layers=cfg.n_layers)
+/home/jack/00_workspace/02_python/transformer_kit/auto_segment_encoder.py:275: UserWarning: enable_nested_tensor is True, but self.use_nested_tensor is False because encoder_layer.norm_first was True
+  self.encoder = nn.TransformerEncoder(layer, num_layers=1)
+/home/jack/00_workspace/02_python/transformer_kit/segment_encoder.py:51: UserWarning: enable_nested_tensor is True, but self.use_nested_tensor is False because encoder_layer.norm_first was True
+  self.encoder = nn.TransformerEncoder(layer, num_layers=cfg.n_layers)
+/home/jack/00_workspace/02_python/transformer_kit/causal_transformer.py:44: UserWarning: enable_nested_tensor is True, but self.use_nested_tensor is False because encoder_layer.norm_first was True
+  self.encoder = nn.TransformerEncoder(layer, num_layers=cfg.n_layers)
+slow_up_on: cov=25.00% ret=-6.21% -> FAIL
+crash_regime_repeat: cov=25.00% ret=-6.21% -> FAIL
+crash_hold_30: cov=25.00% ret=-6.21% -> FAIL
+crash_hold_48: cov=25.00% ret=-6.21% -> FAIL
+crash_hold_72: cov=25.00% ret=-6.21% -> FAIL
+trend_hold_p50: cov=18.75% ret=-12.25% -> FAIL
+saved /home/jack/00_workspace/02_python/backtest/v027_phase1/phase1_ablation_summary.json

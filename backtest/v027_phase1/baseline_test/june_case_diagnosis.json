@@ -1,0 +1,43 @@
+{
+  "jun_crash": {
+    "bars": 168,
+    "flat_ratio": 0.7857142857142857,
+    "open_count": 2,
+    "crash_opens": 1,
+    "teq_opens": 0,
+    "slow_up_opens": 0,
+    "watch_slow_up": 24,
+    "top_reasons": {
+      "HOLD_NO_ENTRY": 106,
+      "HOLD_CRASH_TREND_CONFIRMING": 28,
+      "WATCH_SLOW_UPTREND": 24,
+      "HOLD_SIGNAL_VALID": 3,
+      "ADD_SIGNAL_CONFIRMED": 2,
+      "OPEN_SHORT_CRASH": 1,
+      "HOLD_SHORT_REVERSE_WAIT_CONFIRM": 1,
+      "CLOSE_CRASH_MAX_HOLD_BARS": 1,
+      "OPEN_LONG_SIGNAL": 1,
+      "CLOSE_REVERSE_SIGNAL": 1
+    },
+    "price_start": 74541.6,
+    "price_end": 64117.7,
+    "price_chg_pct": -0.1398400356311108
+  },
+  "jun_recovery": {
+    "bars": 312,
+    "flat_ratio": 1.0,
+    "open_count": 0,
+    "crash_opens": 0,
+    "teq_opens": 0,
+    "slow_up_opens": 0,
+    "watch_slow_up": 176,
+    "top_reasons": {
+      "WATCH_SLOW_UPTREND": 176,
+      "HOLD_NO_ENTRY": 134,
+      "BLOCK_BIAS_SHORT_OPEN": 2
+    },
+    "price_start": 63314.4,
+    "price_end": 65644.8,
+    "price_chg_pct": 0.03680679276752219
+  }
+}
