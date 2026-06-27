@@ -12,6 +12,7 @@ from torch.utils.data import DataLoader
 
 from transformer_kit.auto_segment_encoder import flat_segment_importance_weights
 from transformer_kit.labels import MarketStateTargets
+from transformer_kit.leg_context import leg_context_from_batch
 from transformer_kit.pattern_model import (
     MarketStateOutput,
     future_prediction_loss,
@@ -879,7 +880,8 @@ def evaluate_market_state(
     for batch in loader:
         ctx = batch["ctx_bars"].to(device)
         ctx_len = batch["ctx_lengths"].to(device)
-        out = model(ctx, ctx_len)
+        leg_ctx = leg_context_from_batch(batch, device)
+        out = model(ctx, ctx_len, leg_context=leg_ctx)
         if not isinstance(out, MarketStateOutput):
             raise RuntimeError("model must return MarketStateOutput in market-state mode")
         tgt = MarketStateTargets(
@@ -1096,6 +1098,7 @@ def collect_leg_align_head_params(model: nn.Module) -> list[nn.Parameter]:
     for attr in (
         "participation_attn_long",
         "participation_attn_short",
+        "leg_context_fusion",
         "participation_logit_long",
         "participation_logit_short",
         "hz_return_heads",
@@ -1289,7 +1292,8 @@ def evaluate_leg_align_market_state(
     for batch in loader:
         ctx = batch["ctx_bars"].to(device)
         ctx_len = batch["ctx_lengths"].to(device)
-        out = model(ctx, ctx_len)
+        leg_ctx = leg_context_from_batch(batch, device)
+        out = model(ctx, ctx_len, leg_context=leg_ctx)
         if not isinstance(out, MarketStateOutput):
             raise RuntimeError("model must return MarketStateOutput")
         if out.participation_logit_long is None:
@@ -1382,7 +1386,8 @@ def train_leg_align_market_state_epoch(
             risk_label=batch["target_risk"].to(device),
         )
         optimizer.zero_grad(set_to_none=True)
-        out = model(ctx, ctx_len)
+        leg_ctx = leg_context_from_batch(batch, device)
+        out = model(ctx, ctx_len, leg_context=leg_ctx)
         if not isinstance(out, MarketStateOutput):
             raise RuntimeError("model must return MarketStateOutput")
         aux_loss, _ = leg_align_aux_loss(
@@ -1411,7 +1416,7 @@ def train_leg_align_market_state_epoch(
             loss = loss + base_loss_scale * base_loss
         if drift_weight > 0 and teacher is not None:
             with torch.no_grad():
-                t_out = teacher(ctx, ctx_len)
+                t_out = teacher(ctx, ctx_len, leg_context=leg_ctx)
             if isinstance(t_out, MarketStateOutput):
                 drift_loss, drift_parts = market_state_teacher_drift_loss(
                     out,

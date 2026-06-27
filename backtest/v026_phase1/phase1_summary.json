@@ -1,0 +1,8 @@
+{
+  "phase1_pass": true,
+  "stack_ok": true,
+  "valid_participation_auc": 0.6969026548672566,
+  "c3_participation_auc": 0.6950063211125158,
+  "delta_part_auc": 0.0018963337547407422,
+  "ic_degradation": 0.009403952643745968
+}

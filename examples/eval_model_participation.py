@@ -104,6 +104,7 @@ def _build_model_from_checkpoint(checkpoint: Path, device: torch.device) -> Klin
     if not hasattr(ns, "variant"):
         ns.variant = "0"
     use_part_attn = bool(ck_args.get("use_participation_attn", False))
+    use_leg_ctx = bool(ck_args.get("use_leg_context", False))
     horizons = () if str(ns.variant) == "0" else (12, 24)
     auto_cfg = pattern_config_from_args(ns)
     model = KlinePatternPredictor(
@@ -120,6 +121,7 @@ def _build_model_from_checkpoint(checkpoint: Path, device: torch.device) -> Klin
             use_horizon_return_head=True,
             use_participation_heads=True,
             use_participation_attn=use_part_attn,
+            use_leg_context=use_leg_ctx,
             leg_align_horizons=horizons,
         )
     ).to(device)
@@ -220,6 +222,11 @@ def eval_checkpoint_split(
     )
     thr = estimate_market_state_thresholds(windows, direction_quantile=0.25, risk_quantile=0.70)
     horizons = () if str(getattr(args, "variant", "0")) == "0" else (12, 24)
+    use_leg_ctx = bool(getattr(args, "use_leg_context", False))
+    if args.checkpoint:
+        ck = load_checkpoint(Path(args.checkpoint), map_location="cpu")
+        ck_args = ck.get("args", {}) if isinstance(ck.get("args"), dict) else {}
+        use_leg_ctx = bool(ck_args.get("use_leg_context", use_leg_ctx))
     loader = DataLoader(
         LegParticipationSequenceDataset(
             bundle.bars,
@@ -230,6 +237,7 @@ def eval_checkpoint_split(
             direction_threshold=thr.direction_threshold,
             risk_vol_threshold=thr.risk_vol_threshold,
             leg_align_horizons=horizons,
+            use_leg_context=use_leg_ctx,
         ),
         batch_size=64,
         shuffle=False,
@@ -240,7 +248,11 @@ def eval_checkpoint_split(
     long_ideal: list[float] = []
     with torch.no_grad():
         for batch in loader:
-            out = model(batch["ctx_bars"].to(device), batch["ctx_lengths"].to(device))
+            leg_ctx = None
+            if "leg_type_id" in batch:
+                from transformer_kit.leg_context import leg_context_from_batch
+                leg_ctx = leg_context_from_batch(batch, device)
+            out = model(batch["ctx_bars"].to(device), batch["ctx_lengths"].to(device), leg_context=leg_ctx)
             if out.participation_logit_long is None:
                 continue
             pl = torch.sigmoid(out.participation_logit_long).cpu().numpy()

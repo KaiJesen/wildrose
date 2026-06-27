@@ -12,6 +12,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from transformer_kit.auto_segment_encoder import AutoSegmentConfig, AutoSegmentVQEncoder
+from transformer_kit.leg_context import LegContextFusion
 from transformer_kit.causal_transformer import CausalTransformer, CausalTransformerConfig
 from transformer_kit.segment_features import BAR_SHAPE_DIM, LOG_RET_COL
 from transformer_kit.trend_features import DEFAULT_TREND_WINDOWS, trend_col_index
@@ -37,6 +38,7 @@ class PatternPredictorConfig:
     return_direction_hidden_mult: float = 1.0
     use_participation_heads: bool = False
     use_participation_attn: bool = False
+    use_leg_context: bool = False
     leg_align_horizons: tuple[int, ...] = ()
 
 
@@ -113,6 +115,7 @@ class MarketStateHead(nn.Module):
         return_direction_hidden_mult: float = 1.0,
         use_participation_heads: bool = False,
         use_participation_attn: bool = False,
+        use_leg_context: bool = False,
         leg_align_horizons: tuple[int, ...] = (12, 24, 48),
     ) -> None:
         super().__init__()
@@ -124,6 +127,7 @@ class MarketStateHead(nn.Module):
         self.detach_risk_vol_heads = detach_risk_vol_heads
         self.use_participation_heads = use_participation_heads
         self.use_participation_attn = use_participation_attn
+        self.use_leg_context = use_leg_context
         self.leg_align_horizons = tuple(leg_align_horizons)
         hidden = max(8, int(d_model * return_direction_hidden_mult))
         self.return_head = nn.Sequential(
@@ -164,6 +168,11 @@ class MarketStateHead(nn.Module):
             if use_participation_heads and use_participation_attn
             else None
         )
+        self.leg_context_fusion = (
+            LegContextFusion(d_model)
+            if use_participation_heads and use_participation_attn and use_leg_context
+            else None
+        )
         self.participation_logit_long = (
             nn.Sequential(
                 nn.Linear(d_model, part_hidden),
@@ -202,6 +211,7 @@ class MarketStateHead(nn.Module):
         pooled: torch.Tensor,
         tokens: torch.Tensor | None = None,
         seg_mask: torch.Tensor | None = None,
+        leg_context: dict[str, torch.Tensor] | None = None,
     ) -> MarketStateOutput:
         b = pooled.size(0)
         cum_return_pred: torch.Tensor | None = None
@@ -222,11 +232,18 @@ class MarketStateHead(nn.Module):
         participation_logit_long = None
         participation_logit_short = None
         hz_return_pred: dict[int, torch.Tensor] | None = None
+        leg_ctx_vec = None
+        if self.leg_context_fusion is not None and leg_context is not None:
+            leg_ctx_vec = self.leg_context_fusion(leg_context)
         if self.participation_attn_long is not None:
             if tokens is None or seg_mask is None:
                 raise ValueError("tokens/seg_mask required when use_participation_attn=True")
-            participation_logit_long = self.participation_attn_long(pooled, tokens, seg_mask)
-            participation_logit_short = self.participation_attn_short(pooled, tokens, seg_mask)
+            participation_logit_long = self.participation_attn_long(
+                pooled, tokens, seg_mask, leg_ctx_vec=leg_ctx_vec
+            )
+            participation_logit_short = self.participation_attn_short(
+                pooled, tokens, seg_mask, leg_ctx_vec=leg_ctx_vec
+            )
         elif self.participation_logit_long is not None:
             participation_logit_long = self.participation_logit_long(pooled).squeeze(-1)
             participation_logit_short = self.participation_logit_short(pooled).squeeze(-1)
@@ -271,9 +288,13 @@ class ParticipationAttn(nn.Module):
         pooled: torch.Tensor,
         tokens: torch.Tensor,
         seg_mask: torch.Tensor,
+        *,
+        leg_ctx_vec: torch.Tensor | None = None,
     ) -> torch.Tensor:
         b = pooled.size(0)
         q = self.query.expand(b, -1, -1) + pooled.unsqueeze(1)
+        if leg_ctx_vec is not None:
+            q = q + leg_ctx_vec.unsqueeze(1)
         h, _ = self.cross_attn(q, tokens, tokens, key_padding_mask=~seg_mask)
         h = self.norm(h + q)
         return self.out(h).reshape(b)
@@ -396,6 +417,7 @@ class KlinePatternPredictor(nn.Module):
                 return_direction_hidden_mult=cfg.return_direction_hidden_mult,
                 use_participation_heads=cfg.use_participation_heads,
                 use_participation_attn=cfg.use_participation_attn,
+                use_leg_context=cfg.use_leg_context,
                 leg_align_horizons=cfg.leg_align_horizons,
             )
             if cfg.use_market_state_head
@@ -422,6 +444,7 @@ class KlinePatternPredictor(nn.Module):
         ctx_bars: torch.Tensor,
         ctx_lengths: torch.Tensor,
         *,
+        leg_context: dict[str, torch.Tensor] | None = None,
         return_aux: bool = False,
     ) -> torch.Tensor | MarketStateOutput | tuple[torch.Tensor, dict[str, torch.Tensor]]:
         """ctx_bars ``[B,T,F]``，ctx_lengths ``[B]`` 有效 bar 数。"""
@@ -462,7 +485,7 @@ class KlinePatternPredictor(nn.Module):
             "ctx_num_segments": auto_out.num_segments,
         }
         if self.cfg.use_market_state_head and self.market_state_head is not None:
-            mso = self.market_state_head(pooled, h, seg_mask)
+            mso = self.market_state_head(pooled, h, seg_mask, leg_context=leg_context)
             if self.out_scale is not None:
                 mso.return_pred = mso.return_pred * self.out_scale
                 if mso.cum_return_pred is not None:
