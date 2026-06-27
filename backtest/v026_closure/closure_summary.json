@@ -1,0 +1,63 @@
+{
+  "split": "test",
+  "arms": [
+    {
+      "calendar_days": 55,
+      "period_start": "2026-04-30 11:00:00+00:00",
+      "period_end": "2026-06-23 22:00:00+00:00",
+      "trade_count": 13,
+      "avg_trades_per_calendar_day": 0.2364,
+      "active_trade_days": 11,
+      "avg_trades_on_active_days": 1.1818,
+      "total_return": 0.09006036690106223,
+      "max_drawdown": -0.012136272269246696,
+      "optimal_hindsight_trades": 526,
+      "arm": "b0",
+      "label": "B0 研究基线 (c1_pw20)",
+      "config": "configs/trading_rule_v024_phase1c_teq_0065a_c1_pw20.json",
+      "checkpoint": "checkpoints/0065a_leg_align_c1_pw20/market_state_best.pt",
+      "backtest_dir": "backtest/v026_closure/b0_test",
+      "plot": "backtest/v026_closure/b0_test/trades_with_optimal.png",
+      "trade_points_png": "backtest/v026_closure/b0_test/trade_points.png"
+    },
+    {
+      "calendar_days": 55,
+      "period_start": "2026-04-30 11:00:00+00:00",
+      "period_end": "2026-06-23 22:00:00+00:00",
+      "trade_count": 14,
+      "avg_trades_per_calendar_day": 0.2545,
+      "active_trade_days": 13,
+      "avg_trades_on_active_days": 1.0769,
+      "total_return": 0.09137229995158269,
+      "max_drawdown": -0.020507320073056518,
+      "optimal_hindsight_trades": 526,
+      "arm": "m2",
+      "label": "M2 C3+C1+D1",
+      "config": "backtest/v026_phase3/configs/m2_wp0.30.json",
+      "checkpoint": "checkpoints/026_phase1_c1d1/market_state_best.pt",
+      "backtest_dir": "backtest/v026_closure/m2_test",
+      "plot": "backtest/v026_closure/m2_test/trades_with_optimal.png",
+      "trade_points_png": "backtest/v026_closure/m2_test/trade_points.png"
+    },
+    {
+      "calendar_days": 55,
+      "period_start": "2026-04-30 11:00:00+00:00",
+      "period_end": "2026-06-23 22:00:00+00:00",
+      "trade_count": 14,
+      "avg_trades_per_calendar_day": 0.2545,
+      "active_trade_days": 13,
+      "avg_trades_on_active_days": 1.0769,
+      "total_return": 0.080690673766592,
+      "max_drawdown": -0.020575569619805827,
+      "optimal_hindsight_trades": 526,
+      "arm": "m3",
+      "label": "M3 +A1 CORAL",
+      "config": "backtest/v026_phase3/configs/m3_wp0.30.json",
+      "checkpoint": "checkpoints/026_phase2_a1/market_state_best.pt",
+      "backtest_dir": "backtest/v026_closure/m3_test",
+      "plot": "backtest/v026_closure/m3_test/trades_with_optimal.png",
+      "trade_points_png": "backtest/v026_closure/m3_test/trade_points.png"
+    }
+  ],
+  "verdict": "026 结案 — 探索门未 PASS，不替换 prod v1.1.0"
+}
