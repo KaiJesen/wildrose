@@ -1,0 +1,26 @@
+{
+  "candidate": "m3",
+  "phase3_pass": false,
+  "explore_pass": false,
+  "best_w_part": 0.3,
+  "b0": {
+    "arm": "b0",
+    "total_return": 0.09006036690106223,
+    "max_drawdown": -0.012136272269246696,
+    "trade_count": 13,
+    "teq_open": 3,
+    "teq_pnl": 0.007977117171790428,
+    "coverage": 0.26666666666666666,
+    "counter_leg": 2
+  },
+  "m3": {
+    "arm": "m3",
+    "total_return": 0.080690673766592,
+    "max_drawdown": -0.020575569619805827,
+    "trade_count": 14,
+    "teq_open": 3,
+    "teq_pnl": -0.000973837213781597,
+    "coverage": 0.26666666666666666,
+    "counter_leg": 2
+  }
+}

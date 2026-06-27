@@ -39,6 +39,8 @@ class PatternPredictorConfig:
     use_participation_heads: bool = False
     use_participation_attn: bool = False
     use_leg_context: bool = False
+    use_coral_participation: bool = False
+    participation_tiers: int = 3
     leg_align_horizons: tuple[int, ...] = ()
 
 
@@ -116,6 +118,8 @@ class MarketStateHead(nn.Module):
         use_participation_heads: bool = False,
         use_participation_attn: bool = False,
         use_leg_context: bool = False,
+        use_coral_participation: bool = False,
+        participation_tiers: int = 3,
         leg_align_horizons: tuple[int, ...] = (12, 24, 48),
     ) -> None:
         super().__init__()
@@ -128,7 +132,9 @@ class MarketStateHead(nn.Module):
         self.use_participation_heads = use_participation_heads
         self.use_participation_attn = use_participation_attn
         self.use_leg_context = use_leg_context
+        self.use_coral_participation = use_coral_participation
         self.leg_align_horizons = tuple(leg_align_horizons)
+        coral_thresholds = max(0, int(participation_tiers) - 1) if use_coral_participation else 0
         hidden = max(8, int(d_model * return_direction_hidden_mult))
         self.return_head = nn.Sequential(
             nn.Linear(d_model, hidden),
@@ -159,12 +165,12 @@ class MarketStateHead(nn.Module):
         part_hidden = max(8, d_model // 2)
         use_mlp_part = use_participation_heads and not use_participation_attn
         self.participation_attn_long = (
-            ParticipationAttn(d_model=d_model, n_heads=n_heads)
+            ParticipationAttn(d_model=d_model, n_heads=n_heads, coral_thresholds=coral_thresholds)
             if use_participation_heads and use_participation_attn
             else None
         )
         self.participation_attn_short = (
-            ParticipationAttn(d_model=d_model, n_heads=n_heads)
+            ParticipationAttn(d_model=d_model, n_heads=n_heads, coral_thresholds=coral_thresholds)
             if use_participation_heads and use_participation_attn
             else None
         )
@@ -264,23 +270,25 @@ class MarketStateHead(nn.Module):
 
 
 class ParticipationAttn(nn.Module):
-    """C3 cross-attention participation head (single scalar logit per side).
+    """C3 cross-attention participation head (scalar BCE or CORAL thresholds per side).
 
     Mirrors ``HorizonReturnHead`` attention pattern: learned query attends over
   segment tokens. ``seg_mask`` True marks valid segments; padding uses
   ``key_padding_mask=~seg_mask`` (026 C1 clarification).
     """
 
-    def __init__(self, d_model: int, n_heads: int) -> None:
+    def __init__(self, d_model: int, n_heads: int, *, coral_thresholds: int = 0) -> None:
         super().__init__()
+        self.coral_thresholds = int(coral_thresholds)
         self.query = nn.Parameter(torch.randn(1, 1, d_model) * 0.02)
         self.cross_attn = nn.MultiheadAttention(d_model, n_heads, batch_first=True)
         self.norm = nn.LayerNorm(d_model)
         hidden = max(8, d_model // 2)
+        out_dim = max(1, self.coral_thresholds) if self.coral_thresholds > 0 else 1
         self.out = nn.Sequential(
             nn.Linear(d_model, hidden),
             nn.GELU(),
-            nn.Linear(hidden, 1),
+            nn.Linear(hidden, out_dim),
         )
 
     def forward(
@@ -297,7 +305,10 @@ class ParticipationAttn(nn.Module):
             q = q + leg_ctx_vec.unsqueeze(1)
         h, _ = self.cross_attn(q, tokens, tokens, key_padding_mask=~seg_mask)
         h = self.norm(h + q)
-        return self.out(h).reshape(b)
+        out = self.out(h)
+        if out.size(-1) == 1:
+            return out.reshape(b)
+        return out.reshape(b, -1)
 
 
 class HorizonReturnHead(nn.Module):
@@ -418,6 +429,8 @@ class KlinePatternPredictor(nn.Module):
                 use_participation_heads=cfg.use_participation_heads,
                 use_participation_attn=cfg.use_participation_attn,
                 use_leg_context=cfg.use_leg_context,
+                use_coral_participation=cfg.use_coral_participation,
+                participation_tiers=cfg.participation_tiers,
                 leg_align_horizons=cfg.leg_align_horizons,
             )
             if cfg.use_market_state_head

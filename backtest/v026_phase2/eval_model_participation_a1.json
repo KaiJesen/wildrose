@@ -1,0 +1,105 @@
+{
+  "splits": {
+    "valid": {
+      "split": "valid",
+      "label_summary": {
+        "bar_count": 1310.0,
+        "confirmed_leg_bar_count": 223.0,
+        "ideal_participate_long_rate": 0.0053435114503816794,
+        "ideal_participate_short_rate": 0.0,
+        "eligible_long_rate": 0.007633587786259542,
+        "eligible_short_rate": 0.0,
+        "confirmed_leg_count": 31.0,
+        "ideal_long_per_1000_bars": 5.34351145038168,
+        "ideal_short_per_1000_bars": 0.0,
+        "participate_tier2_long_rate": 0.0053435114503816794,
+        "participate_tier1_long_rate": 0.016793893129770993,
+        "participate_tier2_short_rate": 0.0,
+        "participate_tier1_short_rate": 0.0030534351145038168
+      },
+      "label_confirmed_leg_count": 31.0,
+      "participation_leg_count": 32,
+      "leg_count_deviation_ratio": 0.03125,
+      "leg_count_alignment_gate_pass": false,
+      "participation_metrics": {
+        "leg_count": 32.0,
+        "leg_count_covered": 5.0,
+        "leg_count_coverage_ratio": 0.15625,
+        "leg_bar_coverage_ratio": 0.20085470085470086,
+        "leg_pnl_capture_ratio": -0.08364627542137548,
+        "counter_leg_participation_count": 3.0,
+        "counter_overlap_bar_ratio": 0.017094017094017096,
+        "small_move_leg_count": 18.0,
+        "leg_loss_coverage_count": 1.0,
+        "slow_up_watch_to_open_ratio": 0.0,
+        "slow_up_false_entry_count": 0.0
+      },
+      "model_metrics": {
+        "participation_auc": 0.6327380952380952,
+        "participation_auc_long": 0.7654761904761904,
+        "participation_auc_short": 0.5,
+        "participation_auc_tier1": 0.8137223227362799,
+        "confirmed_leg_flat_edge_p50_long": -0.32864582538604736,
+        "confirmed_leg_flat_edge_p50_short": -0.5549842119216919,
+        "leg_entry_recall_at_k": 0.5714285714285714,
+        "hz_direction_acc_24": 0.0,
+        "cum_return_ic": 0.03752078695648507,
+        "phase": "1_checkpoint"
+      },
+      "labels_path": "data/labels/leg_participation_a1/leg_participation_valid.csv",
+      "backtest_dir": "backtest/v023_phase1c/valid"
+    },
+    "test": {
+      "split": "test",
+      "label_summary": {
+        "bar_count": 1309.0,
+        "confirmed_leg_bar_count": 222.0,
+        "ideal_participate_long_rate": 0.0007639419404125286,
+        "ideal_participate_short_rate": 0.0007639419404125286,
+        "eligible_long_rate": 0.002291825821237586,
+        "eligible_short_rate": 0.0007639419404125286,
+        "confirmed_leg_count": 30.0,
+        "ideal_long_per_1000_bars": 0.7639419404125286,
+        "ideal_short_per_1000_bars": 0.7639419404125286,
+        "participate_tier2_long_rate": 0.0007639419404125286,
+        "participate_tier1_long_rate": 0.0015278838808250573,
+        "participate_tier2_short_rate": 0.0007639419404125286,
+        "participate_tier1_short_rate": 0.0106951871657754
+      },
+      "label_confirmed_leg_count": 30.0,
+      "participation_leg_count": 30,
+      "leg_count_deviation_ratio": 0.0,
+      "leg_count_alignment_gate_pass": true,
+      "participation_metrics": {
+        "leg_count": 30.0,
+        "leg_count_covered": 5.0,
+        "leg_count_coverage_ratio": 0.16666666666666666,
+        "leg_bar_coverage_ratio": 0.11711711711711711,
+        "leg_pnl_capture_ratio": -0.007742855930015101,
+        "counter_leg_participation_count": 3.0,
+        "counter_overlap_bar_ratio": 0.08108108108108109,
+        "small_move_leg_count": 18.0,
+        "leg_loss_coverage_count": 3.0,
+        "slow_up_watch_to_open_ratio": 0.0,
+        "slow_up_false_entry_count": 0.0
+      },
+      "model_metrics": {
+        "participation_auc": 0.9664998609952739,
+        "participation_auc_long": 0.9696969696969697,
+        "participation_auc_short": 0.963302752293578,
+        "participation_auc_tier1": 0.8070211038961039,
+        "confirmed_leg_flat_edge_p50_long": -0.478118360042572,
+        "confirmed_leg_flat_edge_p50_short": -0.478321373462677,
+        "leg_entry_recall_at_k": 1.0,
+        "hz_direction_acc_24": 0.0,
+        "cum_return_ic": 0.13084847910994643,
+        "phase": "1_checkpoint"
+      },
+      "labels_path": "data/labels/leg_participation_a1/leg_participation_test.csv",
+      "backtest_dir": "backtest/v023_phase1c/test"
+    }
+  },
+  "phase": 1,
+  "checkpoint": "checkpoints/026_phase2_a1/market_state_best.pt",
+  "leg_count_alignment_all_pass": false
+}

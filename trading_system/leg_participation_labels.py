@@ -52,10 +52,34 @@ class LegParticipationLabelConfig:
     mae_atr_limit: float = 1.5
     max_entry_progress: float = 0.35
     forward_horizons: tuple[int, ...] = (12, 24, 48)
+    # 026 A1 ordered tiers (optional; tier2 matches mae_atr_limit + max_entry_progress).
+    enable_a1_tiers: bool = False
+    tier1_mae_atr_limit: float = 2.5
+    tier1_max_entry_progress: float = 0.50
 
     @property
     def round_trip_cost(self) -> float:
         return 2.0 * (self.fee_bps + self.slippage_bps) / 10000.0
+
+
+def _participation_tier(
+    roi: float,
+    mae: float,
+    progress: float,
+    *,
+    tier2_mae: float,
+    tier1_mae: float,
+    tier2_progress: float,
+    tier1_progress: float,
+) -> int:
+    """026 A1: 0=none, 1=weak participate, 2=strong (ideal)."""
+    if roi <= 0:
+        return 0
+    if mae <= tier2_mae and progress <= tier2_progress:
+        return 2
+    if mae <= tier1_mae and progress <= tier1_progress:
+        return 1
+    return 0
 
 
 @dataclass
@@ -273,10 +297,13 @@ def compute_ideal_participation_labels(
 
     ideal_long: list[int] = []
     ideal_short: list[int] = []
+    tier_long: list[int] = []
+    tier_short: list[int] = []
     eligible_long: list[int] = []
     eligible_short: list[int] = []
     label_progress: list[float] = []
     fwd: dict[str, list[float]] = {f"forward_leg_roi_{h}": [] for h in label_cfg.forward_horizons}
+    use_tiers = label_cfg.enable_a1_tiers
 
     for row in bars.itertuples(index=False):
         t = int(row.bar_idx)
@@ -304,19 +331,58 @@ def compute_ideal_participation_labels(
         eligible_short.append(int(short_elig))
 
         end = leg_ends.get(leg_id, t)
+        tier_l = 0
+        tier_s = 0
+        if use_tiers and confirmed and not chop and sub_phase not in EXCLUDED_SUB_PHASES and leg_id in leg_ends:
+            end = leg_ends[leg_id]
+            if leg_type in LONG_LABEL_LEG_TYPES and align == "UP":
+                roi = _forward_roi(full_close, t, end, long_side=True, cost=cost)
+                mae = _forward_mae(full_high, full_low, full_close, full_atr, t, end, long_side=True)
+                tier_l = _participation_tier(
+                    roi,
+                    mae,
+                    progress,
+                    tier2_mae=label_cfg.mae_atr_limit,
+                    tier1_mae=label_cfg.tier1_mae_atr_limit,
+                    tier2_progress=label_cfg.max_entry_progress,
+                    tier1_progress=label_cfg.tier1_max_entry_progress,
+                )
+            if leg_type in SHORT_LABEL_LEG_TYPES and align == "DOWN":
+                roi = _forward_roi(full_close, t, end, long_side=False, cost=cost)
+                mae = _forward_mae(full_high, full_low, full_close, full_atr, t, end, long_side=False)
+                tier_s = _participation_tier(
+                    roi,
+                    mae,
+                    progress,
+                    tier2_mae=label_cfg.mae_atr_limit,
+                    tier1_mae=label_cfg.tier1_mae_atr_limit,
+                    tier2_progress=label_cfg.max_entry_progress,
+                    tier1_progress=label_cfg.tier1_max_entry_progress,
+                )
+
         if long_elig and leg_id in leg_ends:
-            roi = _forward_roi(full_close, t, end, long_side=True, cost=cost)
-            mae = _forward_mae(full_high, full_low, full_close, full_atr, t, end, long_side=True)
-            ideal_long.append(int(roi > 0 and mae <= label_cfg.mae_atr_limit))
+            if use_tiers:
+                ideal_long.append(int(tier_l >= 2))
+            else:
+                roi = _forward_roi(full_close, t, end, long_side=True, cost=cost)
+                mae = _forward_mae(full_high, full_low, full_close, full_atr, t, end, long_side=True)
+                ideal_long.append(int(roi > 0 and mae <= label_cfg.mae_atr_limit))
         else:
-            ideal_long.append(0)
+            ideal_long.append(int(tier_l >= 2) if use_tiers else 0)
 
         if short_elig and leg_id in leg_ends:
-            roi = _forward_roi(full_close, t, end, long_side=False, cost=cost)
-            mae = _forward_mae(full_high, full_low, full_close, full_atr, t, end, long_side=False)
-            ideal_short.append(int(roi > 0 and mae <= label_cfg.mae_atr_limit))
+            if use_tiers:
+                ideal_short.append(int(tier_s >= 2))
+            else:
+                roi = _forward_roi(full_close, t, end, long_side=False, cost=cost)
+                mae = _forward_mae(full_high, full_low, full_close, full_atr, t, end, long_side=False)
+                ideal_short.append(int(roi > 0 and mae <= label_cfg.mae_atr_limit))
         else:
-            ideal_short.append(0)
+            ideal_short.append(int(tier_s >= 2) if use_tiers else 0)
+
+        if use_tiers:
+            tier_long.append(tier_l)
+            tier_short.append(tier_s)
 
         for h in label_cfg.forward_horizons:
             fwd[f"forward_leg_roi_{h}"].append(
@@ -331,6 +397,9 @@ def compute_ideal_participation_labels(
     out["eligible_participate_short"] = eligible_short
     out["ideal_participate_long"] = ideal_long
     out["ideal_participate_short"] = ideal_short
+    if use_tiers:
+        out["participate_tier_long"] = tier_long
+        out["participate_tier_short"] = tier_short
     for k, v in fwd.items():
         out[k] = v
     return out
@@ -339,7 +408,7 @@ def compute_ideal_participation_labels(
 def label_summary(labels: pd.DataFrame) -> dict[str, float]:
     n = max(1, len(labels))
     confirmed = labels[labels["is_leg_confirmed"] == 1]
-    return {
+    out: dict[str, float] = {
         "bar_count": float(len(labels)),
         "confirmed_leg_bar_count": float(len(confirmed)),
         "ideal_participate_long_rate": float(labels["ideal_participate_long"].mean()),
@@ -350,6 +419,18 @@ def label_summary(labels: pd.DataFrame) -> dict[str, float]:
         "ideal_long_per_1000_bars": float(labels["ideal_participate_long"].sum()) / n * 1000.0,
         "ideal_short_per_1000_bars": float(labels["ideal_participate_short"].sum()) / n * 1000.0,
     }
+    if "participate_tier_long" in labels.columns:
+        tier_l = labels["participate_tier_long"]
+        tier_s = labels["participate_tier_short"]
+        out.update(
+            {
+                "participate_tier2_long_rate": float((tier_l >= 2).mean()),
+                "participate_tier1_long_rate": float((tier_l >= 1).mean()),
+                "participate_tier2_short_rate": float((tier_s >= 2).mean()),
+                "participate_tier1_short_rate": float((tier_s >= 1).mean()),
+            }
+        )
+    return out
 
 
 def count_confirmed_legs_from_bars(

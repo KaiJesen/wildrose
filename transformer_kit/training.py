@@ -1133,6 +1133,19 @@ def market_state_teacher_drift_loss(
     return total, parts
 
 
+def participation_score_from_logits(logits: torch.Tensor) -> torch.Tensor:
+    """Map BCE [B] or CORAL [B, K-1] logits to scalar participation score per sample."""
+    if logits.dim() == 0:
+        return torch.sigmoid(logits)
+    if logits.dim() == 1:
+        if logits.numel() == 1:
+            return torch.sigmoid(logits.reshape(()))
+        return torch.sigmoid(logits[0])
+    if logits.size(-1) == 1:
+        return torch.sigmoid(logits.squeeze(-1))
+    return torch.sigmoid(logits[..., 0])
+
+
 def _masked_weighted_bce(
     logits: torch.Tensor,
     targets: torch.Tensor,
@@ -1142,6 +1155,29 @@ def _masked_weighted_bce(
     if mask.sum() < 1:
         return logits.sum() * 0.0
     loss = F.binary_cross_entropy_with_logits(logits, targets, reduction="none")
+    w = weights * mask.float()
+    return (loss * w).sum() / w.sum().clamp(min=1e-6)
+
+
+def _masked_weighted_coral(
+    logits: torch.Tensor,
+    tier_targets: torch.Tensor,
+    mask: torch.Tensor,
+    weights: torch.Tensor,
+    *,
+    num_tiers: int = 3,
+) -> torch.Tensor:
+    """CORAL ordinal loss for tier labels in {0..num_tiers-1}."""
+    if mask.sum() < 1:
+        return logits.sum() * 0.0
+    k = max(1, num_tiers - 1)
+    if logits.dim() == 1:
+        logits = logits.unsqueeze(-1)
+    if logits.size(-1) != k:
+        raise ValueError(f"expected {k} coral logits, got shape {tuple(logits.shape)}")
+    levels = torch.arange(k, device=logits.device, dtype=logits.dtype)
+    binary_targets = (tier_targets.unsqueeze(-1) > levels.unsqueeze(0)).float()
+    loss = F.binary_cross_entropy_with_logits(logits, binary_targets, reduction="none").mean(dim=-1)
     w = weights * mask.float()
     return (loss * w).sum() / w.sum().clamp(min=1e-6)
 
@@ -1156,6 +1192,8 @@ def leg_align_aux_loss(
     hz_24_weight: float = 0.0,
     hz_48_weight: float = 0.0,
     leg_dir_weight: float = 0.0,
+    use_coral_participation: bool = False,
+    participation_tiers: int = 3,
 ) -> tuple[torch.Tensor, dict[str, float]]:
     anchor = (
         output.participation_logit_long
@@ -1180,18 +1218,35 @@ def leg_align_aux_loss(
     if participation_weight > 0 and output.participation_logit_long is not None:
         long_mask = confirmed & align_up
         short_mask = confirmed & align_down & fast_down
-        long_loss = _masked_weighted_bce(
-            output.participation_logit_long,
-            batch["ideal_participate_long"].to(device),
-            long_mask,
-            weights,
-        )
-        short_loss = _masked_weighted_bce(
-            output.participation_logit_short,
-            batch["ideal_participate_short"].to(device),
-            short_mask,
-            weights,
-        )
+        coral = use_coral_participation and "participate_tier_long" in batch
+        if coral:
+            long_loss = _masked_weighted_coral(
+                output.participation_logit_long,
+                batch["participate_tier_long"].to(device),
+                long_mask,
+                weights,
+                num_tiers=participation_tiers,
+            )
+            short_loss = _masked_weighted_coral(
+                output.participation_logit_short,
+                batch["participate_tier_short"].to(device),
+                short_mask,
+                weights,
+                num_tiers=participation_tiers,
+            )
+        else:
+            long_loss = _masked_weighted_bce(
+                output.participation_logit_long,
+                batch["ideal_participate_long"].to(device),
+                long_mask,
+                weights,
+            )
+            short_loss = _masked_weighted_bce(
+                output.participation_logit_short,
+                batch["ideal_participate_short"].to(device),
+                short_mask,
+                weights,
+            )
         part_loss = 0.5 * (long_loss + short_loss)
         parts["participation_loss"] = float(part_loss.detach())
         total = total + participation_weight * part_loss
@@ -1282,8 +1337,10 @@ def evaluate_leg_align_market_state(
     model.eval()
     long_scores: list[float] = []
     long_labels: list[float] = []
+    long_tier1_labels: list[float] = []
     short_scores: list[float] = []
     short_labels: list[float] = []
+    short_tier1_labels: list[float] = []
     hz24_pred: list[float] = []
     hz24_true: list[float] = []
     flat_edge_long: list[float] = []
@@ -1298,24 +1355,32 @@ def evaluate_leg_align_market_state(
             raise RuntimeError("model must return MarketStateOutput")
         if out.participation_logit_long is None:
             continue
-        pl = torch.sigmoid(out.participation_logit_long).detach().cpu().numpy()
-        ps = torch.sigmoid(out.participation_logit_short).detach().cpu().numpy()
+        pl_t = participation_score_from_logits(out.participation_logit_long).detach().cpu().numpy()
+        ps_t = participation_score_from_logits(out.participation_logit_short).detach().cpu().numpy()
         confirmed = batch["is_leg_confirmed"].numpy() >= 0.5
         up = batch["align_direction_up"].numpy() >= 0.5
         down = batch["align_direction_down"].numpy() >= 0.5
         fast_down = batch["leg_type_fast_down"].numpy() >= 0.5
         ideal_l = batch["ideal_participate_long"].numpy()
         ideal_s = batch["ideal_participate_short"].numpy()
+        if "participate_tier_long" in batch:
+            tier_l = batch["participate_tier_long"].numpy()
+            tier_s = batch["participate_tier_short"].numpy()
+        else:
+            tier_l = ideal_l
+            tier_s = ideal_s
         long_mask = confirmed & up
         short_mask = confirmed & down & fast_down
         if long_mask.any():
-            long_scores.extend(pl[long_mask].tolist())
+            long_scores.extend(pl_t[long_mask].tolist())
             long_labels.extend(ideal_l[long_mask].tolist())
-            flat_edge_long.extend((2.0 * pl[long_mask] - 1.0).tolist())
+            long_tier1_labels.extend((tier_l[long_mask] >= 1).astype(float).tolist())
+            flat_edge_long.extend((2.0 * pl_t[long_mask] - 1.0).tolist())
         if short_mask.any():
-            short_scores.extend(ps[short_mask].tolist())
+            short_scores.extend(ps_t[short_mask].tolist())
             short_labels.extend(ideal_s[short_mask].tolist())
-            flat_edge_short.extend((2.0 * ps[short_mask] - 1.0).tolist())
+            short_tier1_labels.extend((tier_s[short_mask] >= 1).astype(float).tolist())
+            flat_edge_short.extend((2.0 * ps_t[short_mask] - 1.0).tolist())
         if out.hz_return_pred is not None and 24 in out.hz_return_pred and "target_hz_return_24" in batch:
             pred24 = out.hz_return_pred[24].detach().cpu().numpy()
             true24 = batch["target_hz_return_24"].numpy()
@@ -1327,6 +1392,9 @@ def evaluate_leg_align_market_state(
     auc_l = _roc_auc_score(np.asarray(long_labels), np.asarray(long_scores)) if long_labels else 0.5
     auc_s = _roc_auc_score(np.asarray(short_labels), np.asarray(short_scores)) if short_labels else 0.5
     participation_auc = 0.5 * (auc_l + auc_s)
+    auc_l_t1 = _roc_auc_score(np.asarray(long_tier1_labels), np.asarray(long_scores)) if long_tier1_labels else 0.5
+    auc_s_t1 = _roc_auc_score(np.asarray(short_tier1_labels), np.asarray(short_scores)) if short_tier1_labels else 0.5
+    participation_auc_tier1 = 0.5 * (auc_l_t1 + auc_s_t1)
     hz_acc = 0.0
     if hz24_pred:
         hp = np.sign(np.asarray(hz24_pred))
@@ -1337,6 +1405,9 @@ def evaluate_leg_align_market_state(
             "participation_auc": participation_auc,
             "participation_auc_long": auc_l,
             "participation_auc_short": auc_s,
+            "participation_auc_tier1": participation_auc_tier1,
+            "participation_auc_tier1_long": auc_l_t1,
+            "participation_auc_tier1_short": auc_s_t1,
             "confirmed_leg_flat_edge_p50_long": float(np.median(flat_edge_long)) if flat_edge_long else 0.0,
             "confirmed_leg_flat_edge_p50_short": float(np.median(flat_edge_short)) if flat_edge_short else 0.0,
             "hz_direction_acc_24": hz_acc,
@@ -1365,6 +1436,8 @@ def train_leg_align_market_state_epoch(
     hz_24_weight: float = 0.0,
     hz_48_weight: float = 0.0,
     leg_dir_weight: float = 0.0,
+    use_coral_participation: bool = False,
+    participation_tiers: int = 3,
     base_loss_scale: float = 1.0,
     drift_weight: float = 0.0,
     drift_direction_weight: float = 1.0,
@@ -1399,6 +1472,8 @@ def train_leg_align_market_state_epoch(
             hz_24_weight=hz_24_weight,
             hz_48_weight=hz_48_weight,
             leg_dir_weight=leg_dir_weight,
+            use_coral_participation=use_coral_participation,
+            participation_tiers=participation_tiers,
         )
         loss = aux_loss
         if base_loss_scale > 0:

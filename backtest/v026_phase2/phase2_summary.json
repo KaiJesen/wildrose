@@ -1,0 +1,8 @@
+{
+  "phase2_pass": true,
+  "valid_participation_auc": 0.6327380952380952,
+  "valid_participation_auc_tier1": 0.8137223227362799,
+  "phase1_participation_auc": 0.6969026548672566,
+  "delta_part_auc": -0.06416455962916134,
+  "ic_degradation": 0.0
+}

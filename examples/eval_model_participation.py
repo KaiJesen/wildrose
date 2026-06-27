@@ -38,7 +38,7 @@ from transformer_kit.pattern_encoder import pattern_config_from_args
 from transformer_kit.pattern_model import KlinePatternPredictor, PatternPredictorConfig
 from transformer_kit.segment_dataset import build_sequence_sample_indices
 from transformer_kit.train_utils import load_checkpoint
-from transformer_kit.training import evaluate_leg_align_market_state
+from transformer_kit.training import evaluate_leg_align_market_state, participation_score_from_logits
 
 MODEL_METRIC_KEYS = (
     "participation_auc",
@@ -105,6 +105,11 @@ def _build_model_from_checkpoint(checkpoint: Path, device: torch.device) -> Klin
         ns.variant = "0"
     use_part_attn = bool(ck_args.get("use_participation_attn", False))
     use_leg_ctx = bool(ck_args.get("use_leg_context", False))
+    use_coral = bool(ck_args.get("use_coral_participation", False))
+    state = ck.get("model", {})
+    if not use_coral:
+        key = "market_state_head.participation_attn_long.out.2.weight"
+        use_coral = key in state and int(state[key].shape[0]) > 1
     horizons = () if str(ns.variant) == "0" else (12, 24)
     auto_cfg = pattern_config_from_args(ns)
     model = KlinePatternPredictor(
@@ -122,6 +127,8 @@ def _build_model_from_checkpoint(checkpoint: Path, device: torch.device) -> Klin
             use_participation_heads=True,
             use_participation_attn=use_part_attn,
             use_leg_context=use_leg_ctx,
+            use_coral_participation=use_coral,
+            participation_tiers=int(ck_args.get("participation_tiers", 3)),
             leg_align_horizons=horizons,
         )
     ).to(device)
@@ -255,7 +262,7 @@ def eval_checkpoint_split(
             out = model(batch["ctx_bars"].to(device), batch["ctx_lengths"].to(device), leg_context=leg_ctx)
             if out.participation_logit_long is None:
                 continue
-            pl = torch.sigmoid(out.participation_logit_long).cpu().numpy()
+            pl = participation_score_from_logits(out.participation_logit_long).cpu().numpy()
             confirmed = batch["is_leg_confirmed"].numpy() >= 0.5
             up = batch["align_direction_up"].numpy() >= 0.5
             ideal = batch["ideal_participate_long"].numpy()
@@ -267,6 +274,7 @@ def eval_checkpoint_split(
         "participation_auc": metrics.get("participation_auc"),
         "participation_auc_long": metrics.get("participation_auc_long"),
         "participation_auc_short": metrics.get("participation_auc_short"),
+        "participation_auc_tier1": metrics.get("participation_auc_tier1"),
         "confirmed_leg_flat_edge_p50_long": metrics.get("confirmed_leg_flat_edge_p50_long"),
         "confirmed_leg_flat_edge_p50_short": metrics.get("confirmed_leg_flat_edge_p50_short"),
         "leg_entry_recall_at_k": recall_k,

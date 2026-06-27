@@ -12,6 +12,7 @@ from market_data.schema import COL_CLOSE, COL_HIGH, COL_LOW, COL_TIME
 from transformer_kit.causal_transformer import CausalTransformerConfig
 from transformer_kit.pattern_encoder import pattern_config_from_args
 from transformer_kit.pattern_model import KlinePatternPredictor, MarketStateOutput, PatternPredictorConfig
+from transformer_kit.training import participation_score_from_logits
 from transformer_kit.train_utils import load_checkpoint
 from trading_system.config import TradingSystemConfig
 from trading_system.signal import TradingSignal
@@ -64,6 +65,13 @@ def _use_participation_attn_from_ckpt(ck_args: dict, state: dict) -> bool:
     if ck_args.get("use_participation_attn"):
         return True
     return any(k.startswith("market_state_head.participation_attn_") for k in state)
+
+
+def _use_coral_participation_from_ckpt(ck_args: dict, state: dict) -> bool:
+    if ck_args.get("use_coral_participation"):
+        return True
+    key = "market_state_head.participation_attn_long.out.2.weight"
+    return key in state and int(state[key].shape[0]) > 1
 
 
 def _use_leg_context_from_ckpt(ck_args: dict, state: dict) -> bool:
@@ -131,6 +139,7 @@ class ModelSignalProvider:
         use_participation_heads = _use_participation_heads_from_ckpt(ck_args, state)
         use_participation_attn = _use_participation_attn_from_ckpt(ck_args, state)
         use_leg_context = _use_leg_context_from_ckpt(ck_args, state)
+        use_coral_participation = _use_coral_participation_from_ckpt(ck_args, state)
         ns = SimpleNamespace(
             d_model=d_model,
             n_heads=n_heads,
@@ -162,6 +171,8 @@ class ModelSignalProvider:
                 use_participation_heads=use_participation_heads,
                 use_participation_attn=use_participation_attn,
                 use_leg_context=use_leg_context,
+                use_coral_participation=use_coral_participation,
+                participation_tiers=int(ck_args.get("participation_tiers", 3)),
                 leg_align_horizons=leg_align_horizons,
             )
         ).to(torch.device(device))
@@ -221,11 +232,17 @@ class ModelSignalProvider:
     def _attach_teq_fields(self, sig: TradingSignal, out: MarketStateOutput) -> None:
         teq_cfg = self.cfg.teq_edge
         if out.participation_logit_long is not None:
-            part_long = float(torch.sigmoid(out.participation_logit_long[0]).item())
+            pl = out.participation_logit_long
+            if pl.dim() == 2:
+                pl = pl[0]
+            part_long = float(participation_score_from_logits(pl).item())
         else:
             part_long = 0.5
         if out.participation_logit_short is not None:
-            part_short = float(torch.sigmoid(out.participation_logit_short[0]).item())
+            ps = out.participation_logit_short
+            if ps.dim() == 2:
+                ps = ps[0]
+            part_short = float(participation_score_from_logits(ps).item())
         else:
             part_short = 0.5
         if self.teq_calibrator is not None and self.cfg.teq_edge.use_calibrated:

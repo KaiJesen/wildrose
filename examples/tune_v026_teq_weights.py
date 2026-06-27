@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""026 Phase 3: TEQ valid calibration + w_part sweep for M2 checkpoint."""
+"""026 Phase 3: TEQ valid calibration + w_part sweep for 026 checkpoint."""
 
 from __future__ import annotations
 
+import argparse
 import json
 import subprocess
 import sys
@@ -15,11 +16,11 @@ if str(_ROOT / "examples") not in sys.path:
     sys.path.insert(0, str(_ROOT / "examples"))
 
 from _v025_common import kline_backtest_args
-M2_CKPT = _ROOT / "checkpoints/026_phase1_c1d1/market_state_best.pt"
+
+DEFAULT_CKPT = _ROOT / "checkpoints/026_phase1_c1d1/market_state_best.pt"
 B0_CONFIG = _ROOT / "configs/trading_rule_v024_phase1c_teq_0065a_c1_pw20.json"
 BASE_RULE = _ROOT / "configs/trading_rule_v023_phase1c_0062e.json"
 OUT = _ROOT / "backtest/v026_phase3"
-CALIBRATION = OUT / "teq_edge_calibration.json"
 WP_GRID = [0.30, 0.32, 0.34, 0.35, 0.36, 0.37, 0.38, 0.40]
 EXPLORE_RETURN = 0.0884
 EXPLORE_COVERAGE = 0.28
@@ -71,50 +72,62 @@ def _coverage(backtest_dir: Path) -> float:
     return float(part[split]["participation_metrics"]["leg_count_coverage_ratio"])
 
 
-def _write_m2_config(wp: float) -> Path:
+def _write_arm_config(wp: float, *, ckpt: Path, tag: str) -> Path:
     base = _read_json(B0_CONFIG)
     base["_026_meta"] = {
-        "phase": "3_m2",
-        "recipe": "c3_c1d1_teq",
-        "checkpoint": str(M2_CKPT.relative_to(_ROOT)),
+        "phase": f"3_{tag}",
+        "recipe": "026_teq",
+        "checkpoint": str(ckpt.relative_to(_ROOT)),
     }
+    calib = OUT / f"teq_edge_calibration_{tag}.json"
     base["teq_edge"] = {
         "enabled": True,
         "weight_edge_5": 0.25,
         "weight_edge_24": 0.35,
         "weight_participation": wp,
-        "calibration_path": str(CALIBRATION.relative_to(_ROOT)),
+        "calibration_path": str(calib.relative_to(_ROOT)),
         "use_calibrated": True,
-        "model_checkpoint": str(M2_CKPT.relative_to(_ROOT)),
+        "model_checkpoint": str(ckpt.relative_to(_ROOT)),
     }
-    cfg_path = OUT / "configs" / f"m2_wp{wp:.2f}.json"
+    cfg_path = OUT / "configs" / f"{tag}_wp{wp:.2f}.json"
     cfg_path.parent.mkdir(parents=True, exist_ok=True)
     cfg_path.write_text(json.dumps(base, indent=2) + "\n", encoding="utf-8")
     return cfg_path
 
 
 def main() -> int:
-    if not M2_CKPT.is_file():
-        raise FileNotFoundError(M2_CKPT)
+    ap = argparse.ArgumentParser(description="026 TEQ valid calibration + w_part sweep")
+    ap.add_argument("--checkpoint", default=str(DEFAULT_CKPT.relative_to(_ROOT)))
+    ap.add_argument("--tag", default="m2", help="arm tag for outputs (m2|m3)")
+    args = ap.parse_args()
+
+    ckpt = Path(args.checkpoint)
+    if not ckpt.is_absolute():
+        ckpt = (_ROOT / ckpt).resolve()
+    tag = str(args.tag).lower()
+    if not ckpt.is_file():
+        raise FileNotFoundError(ckpt)
     OUT.mkdir(parents=True, exist_ok=True)
+    calibration = OUT / f"teq_edge_calibration_{tag}.json"
+    sweep_path = OUT / f"teq_wp_sweep_{tag}.json"
 
     _run([
         sys.executable,
         "examples/calibrate_teq_edge.py",
         "--checkpoint",
-        str(M2_CKPT.relative_to(_ROOT)),
+        str(ckpt.relative_to(_ROOT)),
         "--config",
         str(BASE_RULE.relative_to(_ROOT)),
         "--output",
-        str(CALIBRATION.relative_to(_ROOT)),
+        str(calibration.relative_to(_ROOT)),
         *_kline_args(),
     ])
 
     rows: list[dict] = []
     for wp in WP_GRID:
-        cfg = _write_m2_config(wp)
-        valid_dir = OUT / f"sweep_wp{wp:.2f}_valid"
-        m = _backtest(cfg, M2_CKPT, "valid", valid_dir)
+        cfg = _write_arm_config(wp, ckpt=ckpt, tag=tag)
+        valid_dir = OUT / f"sweep_{tag}_wp{wp:.2f}_valid"
+        m = _backtest(cfg, ckpt, "valid", valid_dir)
         cov = _coverage(valid_dir)
         row = {
             "w_part": wp,
@@ -128,14 +141,25 @@ def main() -> int:
         }
         rows.append(row)
         print(
-            f"wp={wp:.2f} valid ret={row['valid_return']*100:.2f}% "
+            f"[{tag}] wp={wp:.2f} valid ret={row['valid_return']*100:.2f}% "
             f"cov={cov*100:.1f}% teq={row['valid_teq']}"
         )
 
     best = max(rows, key=lambda r: (r["valid_explore_pass"], r["valid_coverage"], r["valid_return"]))
-    summary = {"rows": rows, "best": best, "calibration": str(CALIBRATION.relative_to(_ROOT))}
-    (OUT / "teq_wp_sweep.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
-    print(f"best w_part={best['w_part']:.2f} (valid explore={'PASS' if best['valid_explore_pass'] else 'FAIL'})")
+    summary = {
+        "tag": tag,
+        "checkpoint": str(ckpt.relative_to(_ROOT)),
+        "rows": rows,
+        "best": best,
+        "calibration": str(calibration.relative_to(_ROOT)),
+    }
+    sweep_path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
+    if tag == "m2":
+        (OUT / "teq_wp_sweep.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
+        calibration_legacy = OUT / "teq_edge_calibration.json"
+        if calibration.is_file() and not calibration_legacy.is_file():
+            calibration_legacy.write_text(calibration.read_text(encoding="utf-8"), encoding="utf-8")
+    print(f"[{tag}] best w_part={best['w_part']:.2f} (valid explore={'PASS' if best['valid_explore_pass'] else 'FAIL'})")
     return 0
 
 

@@ -79,7 +79,12 @@ def anchor_leg_fields(row, *, leg_starts: dict[int, int]) -> dict[str, float]:
 
 
 def d1_sample_weight(row: dict[str, float]) -> float:
-    """026 D1 tier weights (ideal / hard-negative / other)."""
+    """026 D1 tier weights (strong / weak-positive / hard-negative / other)."""
+    tier = max(row.get("participate_tier_long", 0.0), row.get("participate_tier_short", 0.0))
+    if tier >= 2:
+        return 10.0
+    if tier >= 1:
+        return 6.0
     ideal = row.get("ideal_participate_long", 0.0) >= 1.0 or row.get("ideal_participate_short", 0.0) >= 1.0
     if ideal:
         return 10.0

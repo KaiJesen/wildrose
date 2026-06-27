@@ -14,6 +14,8 @@ def _default_label_row(*, use_leg_context: bool = False) -> dict[str, float]:
     row = {
         "ideal_participate_long": 0.0,
         "ideal_participate_short": 0.0,
+        "participate_tier_long": 0.0,
+        "participate_tier_short": 0.0,
         "is_leg_confirmed": 0.0,
         "chop_hard": 0.0,
         "align_direction_up": 0.0,
@@ -72,9 +74,13 @@ class LegParticipationSequenceDataset(PatternSequenceDataset):
             leg_type = str(getattr(row, "leg_type", ""))
             ideal_l = float(getattr(row, "ideal_participate_long", 0))
             ideal_s = float(getattr(row, "ideal_participate_short", 0))
+            tier_l = float(getattr(row, "participate_tier_long", ideal_l))
+            tier_s = float(getattr(row, "participate_tier_short", ideal_s))
             row_data = {
                 "ideal_participate_long": ideal_l,
                 "ideal_participate_short": ideal_s,
+                "participate_tier_long": tier_l,
+                "participate_tier_short": tier_s,
                 "is_leg_confirmed": confirmed,
                 "chop_hard": chop,
                 "align_direction_up": 1.0 if align == "UP" else 0.0,
