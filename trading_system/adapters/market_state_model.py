@@ -53,7 +53,23 @@ def _leg_align_horizons_from_ckpt(ck_args: dict, state: dict) -> tuple[int, ...]
 def _use_participation_heads_from_ckpt(ck_args: dict, state: dict) -> bool:
     if ck_args.get("variant") in {"0", "1", "2"}:
         return True
-    return any(k.startswith("market_state_head.participation_logit_") for k in state)
+    return any(
+        k.startswith("market_state_head.participation_logit_")
+        or k.startswith("market_state_head.participation_attn_")
+        for k in state
+    )
+
+
+def _use_participation_attn_from_ckpt(ck_args: dict, state: dict) -> bool:
+    if ck_args.get("use_participation_attn"):
+        return True
+    return any(k.startswith("market_state_head.participation_attn_") for k in state)
+
+
+def _use_leg_context_from_ckpt(ck_args: dict, state: dict) -> bool:
+    if ck_args.get("use_leg_context"):
+        return True
+    return any(k.startswith("market_state_head.leg_context_fusion.") for k in state)
 
 
 @dataclass
@@ -69,6 +85,10 @@ class ModelSignalProvider:
     teq_calibrator: TeqEdgeCalibrator | None = None
     slow_up_calibrator: ChannelEdgeCalibrator | None = None
     std_trend_calibrator: ChannelEdgeCalibrator | None = None
+    use_leg_context: bool = False
+    _leg_type_id: np.ndarray | None = None
+    _leg_progress: np.ndarray | None = None
+    _bars_since_norm: np.ndarray | None = None
 
     @classmethod
     def from_checkpoint(
@@ -109,6 +129,8 @@ class ModelSignalProvider:
         trunk_layers = int(ck_args.get("trunk_layers", trunk_layers))
         leg_align_horizons = _leg_align_horizons_from_ckpt(ck_args, state)
         use_participation_heads = _use_participation_heads_from_ckpt(ck_args, state)
+        use_participation_attn = _use_participation_attn_from_ckpt(ck_args, state)
+        use_leg_context = _use_leg_context_from_ckpt(ck_args, state)
         ns = SimpleNamespace(
             d_model=d_model,
             n_heads=n_heads,
@@ -138,6 +160,8 @@ class ModelSignalProvider:
                 use_cum_heads=True,
                 use_horizon_return_head=True,
                 use_participation_heads=use_participation_heads,
+                use_participation_attn=use_participation_attn,
+                use_leg_context=use_leg_context,
                 leg_align_horizons=leg_align_horizons,
             )
         ).to(torch.device(device))
@@ -150,6 +174,11 @@ class ModelSignalProvider:
             close,
             cfg.execution.atr_period,
         )
+        leg_type_id = leg_progress = bars_since_norm = None
+        if use_leg_context:
+            from transformer_kit.leg_context import precompute_inference_leg_context
+
+            leg_type_id, leg_progress, bars_since_norm = precompute_inference_leg_context(df, cfg)
         calibrator = None
         teq_cfg = cfg.teq_edge
         if teq_cfg.enabled and teq_cfg.use_calibrated and teq_cfg.calibration_path:
@@ -183,6 +212,10 @@ class ModelSignalProvider:
             teq_calibrator=calibrator,
             slow_up_calibrator=slow_up_calibrator,
             std_trend_calibrator=std_trend_calibrator,
+            use_leg_context=use_leg_context,
+            _leg_type_id=leg_type_id,
+            _leg_progress=leg_progress,
+            _bars_since_norm=bars_since_norm,
         )
 
     def _attach_teq_fields(self, sig: TradingSignal, out: MarketStateOutput) -> None:
@@ -289,7 +322,14 @@ class ModelSignalProvider:
     def signal_at(self, idx: int) -> TradingSignal:
         ctx = torch.from_numpy(self.bars[idx - self.context_bars : idx].astype(np.float32)).unsqueeze(0).to(self.device)
         ctx_len = torch.tensor([self.context_bars], dtype=torch.long, device=self.device)
-        out = self.model(ctx, ctx_len)
+        leg_context = None
+        if self.use_leg_context and self._leg_type_id is not None:
+            leg_context = {
+                "leg_type_id": torch.tensor([self._leg_type_id[idx]], dtype=torch.float32, device=self.device),
+                "leg_progress_ratio": torch.tensor([self._leg_progress[idx]], dtype=torch.float32, device=self.device),
+                "bars_since_norm": torch.tensor([self._bars_since_norm[idx]], dtype=torch.float32, device=self.device),
+            }
+        out = self.model(ctx, ctx_len, leg_context=leg_context)
         if not isinstance(out, MarketStateOutput):
             raise RuntimeError("market state provider expects MarketStateOutput")
         dir_prob = torch.softmax(out.direction_logits[0, 0], dim=-1).cpu().numpy()

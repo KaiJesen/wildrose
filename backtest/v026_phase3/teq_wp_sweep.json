@@ -1,0 +1,77 @@
+{
+  "rows": [
+    {
+      "w_part": 0.3,
+      "config": "backtest/v026_phase3/configs/m2_wp0.30.json",
+      "valid_return": -0.06213089324306098,
+      "valid_coverage": 0.25,
+      "valid_teq": 4,
+      "valid_explore_pass": false
+    },
+    {
+      "w_part": 0.32,
+      "config": "backtest/v026_phase3/configs/m2_wp0.32.json",
+      "valid_return": -0.031725136163480716,
+      "valid_coverage": 0.1875,
+      "valid_teq": 2,
+      "valid_explore_pass": false
+    },
+    {
+      "w_part": 0.34,
+      "config": "backtest/v026_phase3/configs/m2_wp0.34.json",
+      "valid_return": -0.03686085109223003,
+      "valid_coverage": 0.1875,
+      "valid_teq": 2,
+      "valid_explore_pass": false
+    },
+    {
+      "w_part": 0.35,
+      "config": "backtest/v026_phase3/configs/m2_wp0.35.json",
+      "valid_return": -0.03686085109223003,
+      "valid_coverage": 0.1875,
+      "valid_teq": 2,
+      "valid_explore_pass": false
+    },
+    {
+      "w_part": 0.36,
+      "config": "backtest/v026_phase3/configs/m2_wp0.36.json",
+      "valid_return": -0.03686085109223003,
+      "valid_coverage": 0.1875,
+      "valid_teq": 2,
+      "valid_explore_pass": false
+    },
+    {
+      "w_part": 0.37,
+      "config": "backtest/v026_phase3/configs/m2_wp0.37.json",
+      "valid_return": -0.03686085109223003,
+      "valid_coverage": 0.1875,
+      "valid_teq": 2,
+      "valid_explore_pass": false
+    },
+    {
+      "w_part": 0.38,
+      "config": "backtest/v026_phase3/configs/m2_wp0.38.json",
+      "valid_return": -0.03686085109223003,
+      "valid_coverage": 0.1875,
+      "valid_teq": 2,
+      "valid_explore_pass": false
+    },
+    {
+      "w_part": 0.4,
+      "config": "backtest/v026_phase3/configs/m2_wp0.40.json",
+      "valid_return": -0.03686085109223003,
+      "valid_coverage": 0.1875,
+      "valid_teq": 2,
+      "valid_explore_pass": false
+    }
+  ],
+  "best": {
+    "w_part": 0.3,
+    "config": "backtest/v026_phase3/configs/m2_wp0.30.json",
+    "valid_return": -0.06213089324306098,
+    "valid_coverage": 0.25,
+    "valid_teq": 4,
+    "valid_explore_pass": false
+  },
+  "calibration": "backtest/v026_phase3/teq_edge_calibration.json"
+}

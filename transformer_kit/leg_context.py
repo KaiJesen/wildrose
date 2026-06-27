@@ -5,9 +5,18 @@ from __future__ import annotations
 import math
 from typing import Any
 
+import numpy as np
 import pandas as pd
 import torch
 import torch.nn as nn
+
+from market_data.schema import COL_CLOSE, COL_HIGH, COL_LOW, COL_TIME
+from trading_system.config import TradingSystemConfig
+from trading_system.crash import CrashRegimeDetector
+from trading_system.slow_trend import SlowUptrendDetector
+from trading_system.trend import TrendRegimeFilter
+from trading_system.trend_segment import TrendSegmentEngine
+from trading_system.trend_signal import TrendMemory, TrendSignalProvider
 
 # Frozen vocabulary — inference TrendSegmentEngine must map into same ids (026 C2).
 LEG_TYPE_TO_ID: dict[str, int] = {
@@ -111,3 +120,103 @@ def leg_context_from_batch(batch: dict[str, Any], device: torch.device) -> dict[
         "leg_progress_ratio": batch["leg_progress_ratio"].to(device),
         "bars_since_norm": batch["bars_since_norm"].to(device),
     }
+
+
+def _neutral_model_signal(ts, price: float, atr: float):
+    from datetime import datetime
+
+    from trading_system.signal import TradingSignal
+
+    return TradingSignal(
+        ts=ts if ts is not None else datetime(2026, 1, 1),
+        price=price,
+        atr=atr,
+        p_up=0.33,
+        p_down=0.33,
+        p_flat=0.34,
+        p_risk=0.2,
+        pred_ret_1=0.0,
+        pred_ret_2=0.0,
+        pred_ret_3=0.0,
+        pred_ret_4=0.0,
+        pred_ret_5=0.0,
+        pred_cum_ret_5=0.0,
+        edge=0.0,
+    )
+
+
+def precompute_inference_leg_context(df: pd.DataFrame, cfg: TradingSystemConfig) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Causal leg context per bar for 026 C1 inference (026 C2: matches TrendSegmentEngine online)."""
+    from trading_system.adapters.market_state_model import compute_atr
+
+    n = len(df)
+    leg_type_id = np.zeros(n, dtype=np.float32)
+    leg_progress = np.zeros(n, dtype=np.float32)
+    bars_since = np.zeros(n, dtype=np.float32)
+
+    high = df[COL_HIGH].to_numpy(dtype=np.float64)
+    low = df[COL_LOW].to_numpy(dtype=np.float64)
+    close = df[COL_CLOSE].to_numpy(dtype=np.float64)
+    atr_arr = compute_atr(high, low, close, cfg.execution.atr_period)
+    times = df[COL_TIME].tolist()
+
+    trend_filter = TrendRegimeFilter(cfg.trend)
+    signal_provider = TrendSignalProvider(cfg.trend_signal)
+    segment_engine = TrendSegmentEngine(cfg.trend_segment)
+    crash_detector = CrashRegimeDetector(cfg.crash)
+    slow_detector = SlowUptrendDetector(cfg.slow_uptrend)
+    memory = TrendMemory()
+
+    close_hist: list[float] = []
+    high_hist: list[float] = []
+    low_hist: list[float] = []
+    atr_hist: list[float] = []
+
+    for i in range(n):
+        close_hist.append(float(close[i]))
+        high_hist.append(float(high[i]))
+        low_hist.append(float(low[i]))
+        atr_hist.append(float(atr_arr[i]))
+        atr_v = float(atr_arr[i])
+        trend_filter.compute(close_hist, high_hist, low_hist, atr_v)
+        trend_signal = signal_provider.compute(
+            close_hist=close_hist,
+            high_hist=high_hist,
+            low_hist=low_hist,
+            atr_hist=atr_hist,
+            memory=memory,
+        )
+        model_sig = _neutral_model_signal(times[i], float(close[i]), atr_v)
+        crash_ctx = crash_detector.compute(
+            close_hist,
+            high_hist,
+            low_hist,
+            atr_hist,
+            model_sig,
+            standard_open_short=False,
+            is_flat=True,
+        )
+        slow_ctx = slow_detector.compute(
+            close_hist,
+            high_hist,
+            low_hist,
+            atr_v,
+            p_risk=model_sig.p_risk,
+            p_flat=model_sig.p_flat,
+        )
+        segment_ctx = segment_engine.update(
+            bar_idx=i,
+            high=float(high[i]),
+            low=float(low[i]),
+            close=float(close[i]),
+            atr=atr_v,
+            trend_signal=trend_signal,
+            slow_ctx=slow_ctx,
+            crash_ctx=crash_ctx,
+            is_model_blind=bool(crash_ctx.is_model_blind_crash),
+        )
+        leg_type_id[i] = float(leg_type_to_id(segment_ctx.leg_type.value))
+        leg_progress[i] = float(max(0.0, min(1.0, segment_ctx.leg_progress_ratio)))
+        bars_since[i] = bars_since_norm(int(segment_ctx.bars_since_leg_start))
+
+    return leg_type_id, leg_progress, bars_since
